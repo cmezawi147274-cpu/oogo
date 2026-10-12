@@ -1642,7 +1642,7 @@ module.exports = L;
 },
 "./ex_extra.js": function (module, exports, require) {
 // New Oog clips authored after the original export. Same format as the other ex_*.js files.
-const { sw, mirror, halves, stepLegs } = require("./lib.js");
+const { sw, mirror, halves } = require("./lib.js");
 const L = [];
 const adder = cat => d => (L.push(Object.assign({ cat }, d)), d);
 const addPush = adder("push"), addPull = adder("pull"), addLegs = adder("legs-squat"), addHinge = adder("hinge");
@@ -1667,44 +1667,47 @@ addPush({ id: "double-press", name: "Double Press", sub: "Vertical", view: "fron
 addPush({ id: "double-floor-press", name: "Double Floor Press", sub: "Horizontal", rep: 2.5,
   headComp: -1.05, headClamp: 180, armMode: { l: "ik", r: "ik" }, elbowSign: { l: 1, r: 1 },
   hipOff: { l: { x: -30, y: 0 }, r: { x: -26, y: 0 } }, shOff: { l: { x: -26, y: -46 }, r: { x: -20, y: -46 } },
-  bells: [{ hand: "l", z: 2.9 }, { hand: "r" }],
+  z: { arml: 5.4 }, bells: [{ hand: "l", z: 5.5 }, { hand: "r" }],  // far arm: over the torso, behind the head
   defaults: { hx: 30, hy: -52, t: 270, lfx: 70, rfx: 76, lfy: 0, rfy: 0, b0a: -25, b1a: -25 },
   keys: [
-    [0.00, { lhx: -22, lhy: -76, rhx: -16, rhy: -82 }],
+    [0.00, { lhx: -25, lhy: -76, rhx: -16, rhy: -82 }],
     [0.12, {}],
-    [0.50, { lhx: -10, lhy: -38, rhx: -4, rhy: -44 }],
+    [0.50, { lhx: -13, lhy: -38, rhx: -4, rhy: -44 }],
     [0.58, {}],
-    [0.92, { lhx: -22, lhy: -76, rhx: -16, rhy: -82 }],
+    [0.92, { lhx: -25, lhy: -76, rhx: -16, rhy: -82 }],
   ],
   shadow: { x: 10, rx: 110 }, effort: [0.7], sweat: sw(2.5, 0.74), strainAt: [[0.55, 0.85]] });
 
-// archer push-up: seen head-on so the side shift and the straight arm read. The torso is
-// foreshortened (pt) into broad shoulders behind the head; the legs run away from the camera (hidden).
+// archer push-up: seen head-on so the side shift and the straight "bow" arm read. Hands planted
+// very wide; the torso is foreshortened (pt) into a puff behind the head with the shoulders at its
+// sides; the legs run away from the camera, out of sight. Alternates sides each rep.
 const archR = [
-  [0.00, { hx: 0, hy: -37, t: 180 }],
+  [0.00, { hx: 0, hy: -25.5, t: 180 }],
   [0.10, {}],
-  [0.46, { hx: 18, hy: -26, t: 172 }],
+  [0.46, { hx: 19, hy: -10, t: 177 }],       // chest to the right hand, left arm long and straight
   [0.58, {}],
-  [0.92, { hx: 0, hy: -37, t: 180 }],
+  [0.92, { hx: 0, hy: -25.5, t: 180 }],
 ];
 addPush({ id: "archer-push-up", name: "Archer Push-up", sub: "Horizontal", view: "front", rep: 5,
   armMode: { l: "ik", r: "ik" }, legMode: { l: "fkw", r: "fkw" }, elbowSign: { l: -1, r: 1 },
-  headPos: { x: 0, y: -60 }, shOff: { l: { x: -42, y: -40 }, r: { x: 42, y: -40 } },
-  defaults: { pt: 63, lhx: -64, rhx: 64, lhy: 0, rhy: 0, lth: 180, rth: 180, lk: 0, rk: 0, ltf: 0.4, rtf: 0.4, lsf: 0.01, rsf: 0.01, lff: 0.01, rff: 0.01 },
+  headPos: { x: 0, y: -80 }, shOff: { l: { x: -46, y: -40 }, r: { x: 46, y: -40 } },
+  defaults: { pt: 52, lhx: -80, rhx: 80, lhy: 0, rhy: 0, lth: 180, rth: 180, lk: 0, rk: 0, ltf: 0.3, rtf: 0.3, lsf: 0.01, rsf: 0.01, lff: 0.01, rff: 0.01 },
   keys: halves(archR, mirror(archR)),
-  shadow: { x: 0, rx: 84 }, effort: [0.23, 0.73], sweat: [7.4, 9.0], strainAt: [[0.2, 0.4], [0.7, 0.9]] });
+  shadow: { x: 0, rx: 96 }, effort: [0.23, 0.73], sweat: [7.4, 9.0], strainAt: [[0.2, 0.4], [0.7, 0.9]] });
 
-// bench dip: hands on the bench edge behind, feet forward, elbows bend straight back
+// bench dip: hands on the bench edge behind, feet forward. The shoulders sit at the back of the
+// torso (arms reach behind), so the elbows fold straight back past the body at the bottom.
 addPush({ id: "bench-dip", name: "Bench Dip", sub: "Vertical", rep: 2.5,
   armMode: { l: "ik", r: "ik" },
-  props: [{ type: "bench", x: -118, y: -46, w: 74 }],
-  defaults: { lhx: -52, rhx: -48, lhy: -46, rhy: -46, lfx: 6, rfx: 12, lfy: 0, rfy: 0 },
+  shOff: { l: { x: -16, y: -62 }, r: { x: -10, y: -62 } },
+  props: [{ type: "bench", x: -122, y: -46, w: 74 }],
+  defaults: { lhx: -60, rhx: -56, lhy: -46, rhy: -46, lfx: 10, rfx: 16, lfy: 0, rfy: 0 },
   keys: [
-    [0.00, { hx: -30, hy: -37, t: 180 }],
+    [0.00, { hx: -22, hy: -37, t: 180 }],
     [0.10, {}],
-    [0.48, { hx: -32, hy: -14, t: 176 }],
+    [0.48, { hx: -24, hy: -14, t: 176 }],
     [0.56, {}],
-    [0.92, { hx: -30, hy: -37, t: 180 }],
+    [0.92, { hx: -22, hy: -37, t: 180 }],
   ],
   effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.48, 0.8]] });
 
@@ -1726,8 +1729,8 @@ addPull({ id: "double-row", name: "Double Row", sub: "Kettlebell", rep: 2.5,
 // double front squat: side view so the upright torso and depth read (the front view is front-rack-squat)
 const ST = { hx: 0, hy: -57.5, t: 180, lfx: -8, rfx: 2, lfy: 0, rfy: 0 };
 addLegs({ id: "double-front-squat", name: "Double Front Squat", sub: "Squat", rep: 2.5,
-  armMode: { l: "ikb", r: "ikb" }, bells: [{ hand: "l", z: 2.9 }, { hand: "r" }],
-  defaults: { lhx: 36, lhy: -44, rhx: 42, rhy: -44, b0f: 150, b1f: 150 },
+  armMode: { l: "ikb", r: "ikb" }, bells: [{ hand: "l", z: 5.5 }, { hand: "r" }],   // far bell peeks out behind the near one
+  defaults: { lhx: 34, lhy: -46, rhx: 42, rhy: -44, b0f: 150, b1f: 150 },
   keys: [
     [0.00, { ...ST }],
     [0.06, {}],
@@ -1765,17 +1768,28 @@ addLegs({ id: "rope-double-under", name: "Double Under", sub: "Conditioning", re
     [0.75, { hy: -71, lfy: -14, rfy: -14, lfa: -44, rfa: 44 }],                            // second pass under
     [0.87, { hy: -61, lfy: -3.5, rfy: -3.5, lfa: -58, rfa: 58 }],
   ],
-  effort: [0.13], sweat: [6.6, 8.8], strainAt: [[0.1, 0.9]] });
+  effort: [0.13], sweat: [6.6, 8.8], strainAt: [[0, 1]] });
 
+// rope running: lib.js stepLegs' high-knee pattern, but with a plain sine lift so the feet land
+// softly at this pace (stepLegs' sharper lift snaps the shin down at a 0.4 s step)
+function ropeRun(c, p) {
+  let maxExt = 0;
+  ["l", "r"].forEach(s => {
+    const q = (p + (s === "r" ? 0.5 : 0)) % 1;
+    const lift = q < 0.5 ? Math.sin(Math.PI * q / 0.5) : 0;
+    const th = 82 * lift, k = 96 * lift, r = Math.PI / 180;
+    c[s + "th"] = th; c[s + "k"] = k; c[s + "fa"] = 90 - 28 * lift; c[s + "tf"] = 1; c[s + "sf"] = 1;
+    maxExt = Math.max(maxExt, 30 * Math.cos(th * r) + 30 * Math.cos((th - k) * r));
+  });
+  const q = (2 * p) % 1, dq = Math.min(q, 1 - q);                 // 0 at each foot switch
+  c.hy = 2 - maxExt + 0.5 - 7 * Math.exp(-Math.pow(dq / 0.13, 2)); // quick hop at the switch: the rope passes under
+  c.t = 180 + 1.5 * Math.sin(4 * Math.PI * p);
+  c.lhy = c.rhy = -12 + 2 * Math.cos(4 * Math.PI * p);             // wrist turn, one per step
+}
 addLegs({ id: "rope-high-knee", name: "Rope High Knee", sub: "Conditioning", rep: 10 / 12, ...ropeBase({ turns: 2, phase: 0.5, r: 168 }, -246),
   legMode: { l: "fkw", r: "fkw" }, flex: { l: 1, r: 1 },
   keys: [[0, { hx: 0, hy: -57.5, t: 180, ...ropeHands(58, -12) }]],
-  post(c, p) {
-    stepLegs(c, p, { high: true });
-    const q = (2 * p) % 1, dq = Math.min(q, 1 - q);       // 0 at each foot switch
-    c.hy -= 7 * Math.exp(-Math.pow(dq / 0.13, 2));         // quick hop at the switch: the rope passes under here
-    c.lhy = c.rhy = -12 + 2 * Math.cos(4 * Math.PI * p);   // wrist turn, one per step
-  },
+  post: ropeRun,
   effort: [0.25, 0.75], sweat: [6.6, 8.9] });
 
 // ======================= HINGE =======================
@@ -1783,7 +1797,7 @@ const SW = {
   top: { hx: 0, hy: -57.5, t: 184 },
   fall: { hx: 0, hy: -57.5, t: 178 },
   hike: { hx: -2, hy: -56, t: 166 },
-  bot: { hx: -14, hy: -47, t: 122 },
+  bot: { hx: -13, hy: -48, t: 124 },
   snap: { hx: -4, hy: -55, t: 164 },
   up: { hx: 0, hy: -57.5, t: 180 },
 };
@@ -1791,13 +1805,13 @@ const swingKeys = (arms) => [
   [0.00, { ...SW.top, ...arms(86) }],
   [0.22, { ...SW.fall, ...arms(40) }],
   [0.34, { ...SW.hike, ...arms(5) }],
-  [0.50, { ...SW.bot, ...arms(-34) }],
+  [0.50, { ...SW.bot, ...arms(-40) }],          // bells ride a little higher behind: the near one clears the floor
   [0.64, { ...SW.snap, ...arms(10) }],
   [0.76, { ...SW.up, ...arms(55) }],
   [0.90, { ...SW.top, ...arms(86) }],
 ];
 addHinge({ id: "double-swing", name: "Double Swing", sub: "Ballistic · Intermediate", rep: 2,
-  defaults: { lfx: -10, rfx: 4, le: 4, re: 4 }, armMode: { l: "fkw", r: "fkw" },
+  defaults: { lfx: -8, rfx: 2, le: 4, re: 4 }, armMode: { l: "fkw", r: "fkw" },
   keys: swingKeys(a => ({ lua: a, rua: a })),
   bells: [{ hand: "l", z: 2.9 }, { hand: "r" }], effort: [0.64], motion: [{ bell: 1, win: [0.62, 0.86] }], sweat: sw(2, 0.66), strainAt: [[0.56, 0.7]] });
 

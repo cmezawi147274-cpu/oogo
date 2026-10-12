@@ -302,6 +302,45 @@ nonisolated enum OogRenderer {
             line(OogPoint(x: n("x") - 7, y: n("y")), OogPoint(x: n("x") + 7, y: n("y")), 3.6)
         case "mat":
             g.fill(roundedRect(x: n("x1"), y: -2.5, w: n("x2") - n("x1"), h: 2.5, r: 1.25), with: .color(mist))
+        case "rope":
+            // Jump rope from hand to hand; its middle orbits the body. Same geometry as the
+            // "rope" prop in engine.js: side +1 draws the half in front plus the handles
+            // (listed in propsFront), side -1 the half behind (listed in props).
+            let side = n("side", 1), ropeWidth = n("w", 2.4), handle = n("handle", 6)
+            func tip(_ s: OogSide) -> OogPoint {
+                let arm = pose.arm(s)
+                let dir = arm.hand - arm.elbow
+                let length = dir.length == 0 ? 1 : dir.length
+                return arm.hand + dir * (handle / length)
+            }
+            let a = tip(.l), b = tip(.r)
+            let xm = (a.x + b.x) / 2, yh = (a.y + b.y) / 2, fw = (b.x - a.x) / 2 * n("flat", 0.6)
+            let top = n("r", 165), low = max(0, n("floor", 0) - ropeWidth / 2 - yh)
+            let turn = n("turns", 1) * pose.p + n("phase", 0)
+            for i in stride(from: Int(n("trail", 0)), through: 0, by: -1) {
+                let phi = 2 * Double.pi * turn - Double(i) * n("trailStep", 0.4)
+                let half: Double = sin(phi) > 0 ? 1 : -1
+                guard half == side else { continue }
+                let c = cos(phi)
+                let d = -((top * (1 + c) + low * (1 - c)) / 2) * c   // rope middle, relative to the hands
+                let my = yh + d, bx = abs(d) * n("bulge", 0.15)
+                var path = Path()
+                path.move(to: CGPoint(x: a.x, y: a.y))
+                path.addCurve(to: CGPoint(x: xm, y: my),
+                              control1: CGPoint(x: a.x - bx, y: a.y + d / 2),
+                              control2: CGPoint(x: xm - fw, y: my))
+                path.addCurve(to: CGPoint(x: b.x, y: b.y),
+                              control1: CGPoint(x: xm + fw, y: my),
+                              control2: CGPoint(x: b.x + bx, y: b.y + d / 2))
+                var rope = g
+                if i > 0 { rope.opacity = 0.36 / Double(i) }
+                rope.stroke(path, with: .color(ink),
+                            style: style(i > 0 ? ropeWidth * 0.8 : ropeWidth, cap: .round, join: .round))
+            }
+            if side == 1 {
+                line(pose.arm(.l).hand, a, 4.4)
+                line(pose.arm(.r).hand, b, 4.4)
+            }
         default:
             break
         }

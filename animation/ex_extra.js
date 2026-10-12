@@ -1,5 +1,5 @@
 // New Oog clips authored after the original export. Same format as the other ex_*.js files.
-const { sw, mirror, halves, stepLegs } = require("./lib.js");
+const { sw, mirror, halves } = require("./lib.js");
 const L = [];
 const adder = cat => d => (L.push(Object.assign({ cat }, d)), d);
 const addPush = adder("push"), addPull = adder("pull"), addLegs = adder("legs-squat"), addHinge = adder("hinge");
@@ -52,17 +52,19 @@ addPush({ id: "archer-push-up", name: "Archer Push-up", sub: "Horizontal", view:
   keys: halves(archR, mirror(archR)),
   shadow: { x: 0, rx: 96 }, effort: [0.23, 0.73], sweat: [7.4, 9.0], strainAt: [[0.2, 0.4], [0.7, 0.9]] });
 
-// bench dip: hands on the bench edge behind, feet forward, elbows bend straight back
+// bench dip: hands on the bench edge behind, feet forward. The shoulders sit at the back of the
+// torso (arms reach behind), so the elbows fold straight back past the body at the bottom.
 addPush({ id: "bench-dip", name: "Bench Dip", sub: "Vertical", rep: 2.5,
   armMode: { l: "ik", r: "ik" },
-  props: [{ type: "bench", x: -118, y: -46, w: 74 }],
-  defaults: { lhx: -52, rhx: -48, lhy: -46, rhy: -46, lfx: 6, rfx: 12, lfy: 0, rfy: 0 },
+  shOff: { l: { x: -16, y: -62 }, r: { x: -10, y: -62 } },
+  props: [{ type: "bench", x: -122, y: -46, w: 74 }],
+  defaults: { lhx: -60, rhx: -56, lhy: -46, rhy: -46, lfx: 10, rfx: 16, lfy: 0, rfy: 0 },
   keys: [
-    [0.00, { hx: -30, hy: -37, t: 180 }],
+    [0.00, { hx: -22, hy: -37, t: 180 }],
     [0.10, {}],
-    [0.48, { hx: -32, hy: -14, t: 176 }],
+    [0.48, { hx: -24, hy: -14, t: 176 }],
     [0.56, {}],
-    [0.92, { hx: -30, hy: -37, t: 180 }],
+    [0.92, { hx: -22, hy: -37, t: 180 }],
   ],
   effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.48, 0.8]] });
 
@@ -123,17 +125,28 @@ addLegs({ id: "rope-double-under", name: "Double Under", sub: "Conditioning", re
     [0.75, { hy: -71, lfy: -14, rfy: -14, lfa: -44, rfa: 44 }],                            // second pass under
     [0.87, { hy: -61, lfy: -3.5, rfy: -3.5, lfa: -58, rfa: 58 }],
   ],
-  effort: [0.13], sweat: [6.6, 8.8], strainAt: [[0.1, 0.9]] });
+  effort: [0.13], sweat: [6.6, 8.8], strainAt: [[0, 1]] });
 
+// rope running: lib.js stepLegs' high-knee pattern, but with a plain sine lift so the feet land
+// softly at this pace (stepLegs' sharper lift snaps the shin down at a 0.4 s step)
+function ropeRun(c, p) {
+  let maxExt = 0;
+  ["l", "r"].forEach(s => {
+    const q = (p + (s === "r" ? 0.5 : 0)) % 1;
+    const lift = q < 0.5 ? Math.sin(Math.PI * q / 0.5) : 0;
+    const th = 82 * lift, k = 96 * lift, r = Math.PI / 180;
+    c[s + "th"] = th; c[s + "k"] = k; c[s + "fa"] = 90 - 28 * lift; c[s + "tf"] = 1; c[s + "sf"] = 1;
+    maxExt = Math.max(maxExt, 30 * Math.cos(th * r) + 30 * Math.cos((th - k) * r));
+  });
+  const q = (2 * p) % 1, dq = Math.min(q, 1 - q);                 // 0 at each foot switch
+  c.hy = 2 - maxExt + 0.5 - 7 * Math.exp(-Math.pow(dq / 0.13, 2)); // quick hop at the switch: the rope passes under
+  c.t = 180 + 1.5 * Math.sin(4 * Math.PI * p);
+  c.lhy = c.rhy = -12 + 2 * Math.cos(4 * Math.PI * p);             // wrist turn, one per step
+}
 addLegs({ id: "rope-high-knee", name: "Rope High Knee", sub: "Conditioning", rep: 10 / 12, ...ropeBase({ turns: 2, phase: 0.5, r: 168 }, -246),
   legMode: { l: "fkw", r: "fkw" }, flex: { l: 1, r: 1 },
   keys: [[0, { hx: 0, hy: -57.5, t: 180, ...ropeHands(58, -12) }]],
-  post(c, p) {
-    stepLegs(c, p, { high: true });
-    const q = (2 * p) % 1, dq = Math.min(q, 1 - q);       // 0 at each foot switch
-    c.hy -= 7 * Math.exp(-Math.pow(dq / 0.13, 2));         // quick hop at the switch: the rope passes under here
-    c.lhy = c.rhy = -12 + 2 * Math.cos(4 * Math.PI * p);   // wrist turn, one per step
-  },
+  post: ropeRun,
   effort: [0.25, 0.75], sweat: [6.6, 8.9] });
 
 // ======================= HINGE =======================

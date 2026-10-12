@@ -12,14 +12,22 @@ an installable file is ready. Sideloadly puts it on your iPhone using your norma
 
 ## After each change
 
-1. Open the repository on GitHub, then **Actions**, then the newest **iOS** run.
-2. When it shows a green tick, scroll to **Artifacts** and download **oogo-ipa**.
-   Unzip it to get `Oogo-xxxxxxx-unsigned.ipa`.
-3. Open Sideloadly, drag the `.ipa` in, type your Apple ID, press **Start**.
-4. First time only, on the iPhone:
+1. Download the newest build. This link never changes and always serves the latest one:
+   https://github.com/cmezawi147274-cpu/oogo/releases/download/latest/Oogo.ipa
+   (The release page shows which change it contains:
+   https://github.com/cmezawi147274-cpu/oogo/releases/tag/latest)
+2. Open Sideloadly, drag `Oogo.ipa` in, type your Apple ID, press **Start**.
+   It replaces the old version and keeps your data.
+3. First time only, on the iPhone:
    - Settings, General, VPN & Device Management: tap your Apple ID, then **Trust**.
    - Settings, Privacy & Security, **Developer Mode**: turn on, restart, confirm.
-5. Open Oogo.
+4. Open Oogo.
+
+### Skip the cable (optional)
+
+With the iPhone plugged in once, open iTunes, select the phone, tick
+**Sync with this iPhone over Wi-Fi**, Apply. After that Sideloadly can install over Wi-Fi
+while the PC and phone are on the same network.
 
 ## Limits of a free Apple ID
 
