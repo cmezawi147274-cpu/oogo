@@ -1,0 +1,1995 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oog clips</title>
+<style>
+:root { --ink:#111111; --white:#FFFFFF; --cloud:#F7F7F5; --mist:#E8E8E5; --sub:#6A6A66; --red:#E53935; }
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: #FFFFFF; color: var(--ink); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; color: inherit; }
+header.top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 20px; position: sticky; top: 0; background: #FFFFFF; z-index: 5; border-bottom: 1px solid var(--mist); }
+header.top h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+header.top .count { color: var(--sub); font-size: 13px; }
+header.top nav { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.pill { border: 1px solid var(--mist); background: var(--white); border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; text-decoration: none; color: var(--ink); }
+.pill:hover { background: var(--cloud); }
+.pill:focus-visible, .tile:focus-visible, .ctl button:focus-visible, #back:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+main { padding: 4px 20px 48px; max-width: 1400px; margin: 0 auto; }
+section.cat { scroll-margin-top: 72px; }
+section.cat h2 { font-size: 15px; font-weight: 600; margin: 28px 0 12px; display: flex; align-items: baseline; gap: 8px; }
+section.cat h2 small { color: var(--sub); font-weight: 400; font-size: 13px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.tile { position: relative; display: block; width: 100%; text-align: left; background: var(--white); border: 1px solid var(--mist); border-radius: 12px; padding: 8px 8px 10px; cursor: pointer; }
+.tile:hover { border-color: #BDBDB8; }
+.tile .stage { aspect-ratio: 1 / 1; background: #FFFFFF; border-radius: 8px; overflow: hidden; }
+.stage svg { display: block; width: 100%; height: 100%; }
+.tile .name { font-weight: 600; margin: 6px 4px 0; font-size: 14px; }
+.tile .slug { color: var(--sub); font-size: 12px; margin: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.noid { background: var(--red); color: #FFFFFF; font-size: 10px; font-weight: 600; line-height: 1; padding: 3px 7px; border-radius: 999px; letter-spacing: 0.02em; }
+.tile .noid { position: absolute; top: 14px; left: 14px; }
+#single { position: fixed; inset: 0; background: #FFFFFF; z-index: 10; overflow: auto; padding: 16px 20px 32px; }
+#single[hidden] { display: none; }
+#single .wrap { max-width: 760px; margin: 0 auto; }
+#single .bar { display: flex; align-items: center; gap: 12px; }
+#single h2 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+#single .meta { color: var(--sub); font-size: 13px; margin: 6px 0 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#single .meta code { background: var(--cloud); padding: 1px 6px; border-radius: 6px; color: var(--ink); font-size: 12px; }
+#sStage { width: min(100%, calc(100vh - 220px)); aspect-ratio: 1 / 1; margin: 0 auto; }
+.ctl { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.ctl button { min-width: 74px; }
+.ctl input[type=range] { flex: 1; accent-color: var(--ink); }
+.ctl .time { font-variant-numeric: tabular-nums; color: var(--sub); min-width: 56px; text-align: right; font-size: 13px; }
+</style></head>
+<body>
+<header class="top"><h1>Oog clips</h1><span class="count" id="count"></span>
+<button class="pill" id="allPlay" type="button">Pause all</button>
+<nav id="catnav" aria-label="Categories"></nav></header>
+<main id="grid"></main>
+<div id="single" hidden><div class="wrap">
+<div class="bar"><button class="pill" id="back" type="button">Back to all</button><h2 id="sName"></h2></div>
+<div class="meta" id="sMeta"></div>
+<div class="stage" id="sStage" role="img" aria-label="Exercise animation"></div>
+<div class="ctl"><button class="pill" id="sPlay" type="button">Pause</button>
+<input id="sScrub" type="range" min="0" max="10" step="0.01" value="0" aria-label="Time in seconds">
+<span class="time" id="sTime">0.00 s</span></div>
+</div></div>
+<script>// Oog animation engine: a 2D rig drawn in the oogo line-art style.
+// Pure functions: makeClip(def) -> { svgAt(t), loop, ... }. Works in node and browser.
+(function (root) {
+  const INK = "#111111", RED = "#E53935", MIST = "#E8E8E5", WHITE = "#FFFFFF";
+  const LEN = { thigh: 30, shin: 30, upper: 31, fore: 30, foot: 9 };
+  const LOOP = 10;
+
+  const rad = d => d * Math.PI / 180;
+  const deg = r => r * 180 / Math.PI;
+  const dir = a => ({ x: Math.sin(rad(a)), y: Math.cos(rad(a)) }); // 0 down, 90 forward(+x), 180 up
+  const angOf = v => deg(Math.atan2(v.x, v.y));
+  const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y });
+  const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+  const mul = (a, k) => ({ x: a.x * k, y: a.y * k });
+  const lerp = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
+  const len = v => Math.hypot(v.x, v.y);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const f1 = n => (Math.round(n * 100) / 100).toString();
+
+  // ---------- keyframes: periodic monotone cubic per channel ----------
+  function buildTrack(keys) {
+    // keys: [[p, {ch: v}], ...] cumulative (missing channels inherit from previous key)
+    const full = [];
+    let cur = {};
+    keys.forEach(([p, o]) => { cur = Object.assign({}, cur, o); full.push([p, cur]); });
+    const chans = new Set();
+    full.forEach(([, o]) => Object.keys(o).forEach(k => chans.add(k)));
+    // channels missing in earliest keys: backfill from first key that has them
+    chans.forEach(ch => {
+      const first = full.find(([, o]) => ch in o);
+      full.forEach(([, o]) => { if (!(ch in o)) o[ch] = first[1][ch]; });
+    });
+    const P = full.map(k => k[0]);
+    const n = P.length;
+    return function sample(p) {
+      const out = {};
+      if (n === 1) return Object.assign({}, full[0][1]);
+      let i = n - 1;
+      for (let k = 0; k < n; k++) { if (p >= P[k]) i = k; }
+      if (p < P[0]) i = n - 1;
+      const T = k => P[((k % n) + n) % n] + Math.floor(k / n);
+      const V = (k, ch) => full[((k % n) + n) % n][1][ch];
+      let base = i;
+      let pp = p;
+      if (p < P[0]) pp = p + 1; // wrap segment
+      const t0 = T(base), t1 = T(base + 1), tm = T(base - 1), tp = T(base + 2);
+      const h = t1 - t0, s = clamp((pp - t0) / h, 0, 1);
+      const s2 = s * s, s3 = s2 * s;
+      chans.forEach(ch => {
+        const v0 = V(base, ch), v1 = V(base + 1, ch), vm = V(base - 1, ch), vp = V(base + 2, ch);
+        const d0 = (v0 - vm) / (t0 - tm), d1 = (v1 - v0) / h, d2 = (vp - v1) / (tp - t1);
+        const tan = (a, b) => (a * b <= 0 ? 0 : 2 / (1 / a + 1 / b));
+        let m0 = tan(d0, d1), m1 = tan(d1, d2);
+        // limit to keep monotone
+        if (d1 !== 0) { m0 = clamp(m0 / d1, 0, 3) * d1; m1 = clamp(m1 / d1, 0, 3) * d1; } else { m0 = 0; m1 = 0; }
+        out[ch] = (2 * s3 - 3 * s2 + 1) * v0 + (s3 - 2 * s2 + s) * h * m0 + (-2 * s3 + 3 * s2) * v1 + (s3 - s2) * h * m1;
+      });
+      return out;
+    };
+  }
+
+  // ---------- IK ----------
+  function ik(A, T, l1, l2, sign) {
+    let v = sub(T, A), d = len(v);
+    const dmax = l1 + l2 - 0.01, dmin = Math.abs(l1 - l2) + 0.5;
+    const dc = clamp(d, dmin, dmax);
+    const u = d > 1e-6 ? mul(v, 1 / d) : { x: 0, y: 1 };
+    const a = Math.acos(clamp((l1 * l1 + dc * dc - l2 * l2) / (2 * l1 * dc), -1, 1));
+    // rotate u by -sign*a (screen coords): sign=+1 bends to +x when limb points down
+    const th = -sign * a;
+    const r = { x: u.x * Math.cos(th) - u.y * Math.sin(th), y: u.x * Math.sin(th) + u.y * Math.cos(th) };
+    const J = add(A, mul(r, l1));
+    const E = add(A, mul(u, dc));
+    return { J, E };
+  }
+
+  // ---------- shape helpers ----------
+  function cloudPath(cx, cy, rx, ry, n, bulge) {
+    let d = "";
+    for (let i = 0; i <= n; i++) {
+      const a = (i / n) * Math.PI * 2 + 0.3;
+      const x = cx + Math.cos(a) * rx, y = cy + Math.sin(a) * ry;
+      if (i === 0) { d += `M${f1(x)} ${f1(y)}`; continue; }
+      const am = ((i - 0.5) / n) * Math.PI * 2 + 0.3;
+      d += ` Q${f1(cx + Math.cos(am) * (rx + bulge))} ${f1(cy + Math.sin(am) * (ry + bulge))} ${f1(x)} ${f1(y)}`;
+    }
+    return d + " Z";
+  }
+  const CLOUD = cloudPath(0, -36, 42, 38, 12, 9);
+  const BEARD_DOTS = (() => {
+    let s = "";
+    for (let i = 0; i <= 12; i++) {
+      const a = Math.PI * (0.02 + 0.96 * i / 12);
+      s += `<circle cx="${f1(Math.cos(a) * 26)}" cy="${f1(14 + Math.sin(a) * 30)}" r="6.2"/>`;
+    }
+    return s;
+  })();
+
+  function headSVG(leafRot, face) {
+    // face: 'calm' | 'strain'
+    const brows = face === "strain"
+      ? `<path d="M-18 -14 C-14 -13 -8 -11 -4 -9 M4 -9 C8 -11 14 -13 18 -14" fill="none" stroke="${INK}" stroke-width="2.8" stroke-linecap="round"/>`
+      : `<path d="M-18 -12 C-14 -15 -8 -15 -4 -12 M4 -12 C8 -15 14 -15 18 -12" fill="none" stroke="${INK}" stroke-width="2.8" stroke-linecap="round"/>`;
+    const eyes = face === "strain"
+      ? `<path d="M-17 -3 L-6 -3 M6 -3 L17 -3" fill="none" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>`
+      : `<path d="M-17 -4 C-14 0 -8 0 -5 -4 M5 -4 C8 0 14 0 17 -4" fill="none" stroke="${INK}" stroke-width="2" stroke-linecap="round"/>`;
+    return `<g transform="rotate(${f1(leafRot)} 0 -33)">` +
+      `<path d="M0 -33 C0 -40 1 -44 3 -48" fill="none" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>` +
+      `<path d="M3 -48 C6 -58 18 -60 22 -55 C18 -48 8 -45 3 -48 Z" fill="${WHITE}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>` +
+      `<path d="M5 -49 L19 -55 M10 -51 L11 -55 M14 -53 L15 -56.5" fill="none" stroke="${INK}" stroke-width="1.3" stroke-linecap="round"/></g>` +
+      `<path d="M-29 -2 C-36 -4 -36 10 -28 10 M29 -2 C36 -4 36 10 28 10" fill="${WHITE}" stroke="${INK}" stroke-width="2.4"/>` +
+      `<ellipse cx="0" cy="0" rx="28" ry="33" fill="${WHITE}" stroke="${INK}" stroke-width="2.6"/>` +
+      `<g fill="${INK}"><circle cx="-10" cy="-30" r="3.6"/><circle cx="-4" cy="-32.5" r="3.6"/><circle cx="2" cy="-33" r="3.6"/><circle cx="8" cy="-31.5" r="3.6"/><circle cx="13" cy="-29" r="3.6"/></g>` +
+      brows + eyes +
+      `<path d="M1 -6 L-1 7 C0 9 3 9 4 8" fill="none" stroke="${INK}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>` +
+      `<g fill="${INK}"><path d="M-27 4 C-26 30 -12 44 0 45 C12 44 26 30 27 4 C20 14 10 11 0 11 C-10 11 -20 14 -27 4 Z"/>${BEARD_DOTS}</g>` +
+      (face === "strain"
+        ? `<path d="M-7 17 C-3 15.5 3 15.5 7 17 C6 21 -6 21 -7 17 Z" fill="${WHITE}"/>`
+        : `<path d="M-7 17 C-4 16 4 16 7 17 C6 23 -6 23 -7 17 Z" fill="${WHITE}"/>`);
+  }
+
+  function bellSVG(x, y, a, scale) {
+    return `<g transform="translate(${f1(x)} ${f1(y)}) rotate(${f1(-a)}) scale(${scale})">` +
+      `<path d="M-7 10 C-8 -3 8 -3 7 10" fill="none" stroke="${WHITE}" stroke-width="7" stroke-linecap="round"/>` +
+      `<circle cx="0" cy="18" r="12.6" fill="${WHITE}"/><rect x="-9.6" y="25.4" width="19.2" height="6.7" rx="2.5" fill="${WHITE}"/>` +
+      `<path d="M-7 10 C-8 -3 8 -3 7 10" fill="none" stroke="${INK}" stroke-width="4" stroke-linecap="round"/>` +
+      `<circle cx="0" cy="18" r="11" fill="${INK}"/>` +
+      `<rect x="-8" y="27" width="16" height="3.5" rx="1.5" fill="${INK}"/>` +
+      `<path d="M-6 14 C-5 11 -3 10 -1 9.5" fill="none" stroke="${WHITE}" stroke-width="1.6" stroke-linecap="round" opacity=".8"/></g>`;
+  }
+
+  function haloPoly(pts, w) {
+    return `<polyline points="${pts.map(p => f1(p.x) + "," + f1(p.y)).join(" ")}" fill="none" stroke="${WHITE}" stroke-width="${w + 2.6}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+  function lineSVG(a, b, w) {
+    return `<line x1="${f1(a.x)}" y1="${f1(a.y)}" x2="${f1(b.x)}" y2="${f1(b.y)}" stroke="${INK}" stroke-width="${w}" stroke-linecap="round"/>`;
+  }
+  function polySVG(pts, w) {
+    return `<polyline points="${pts.map(p => f1(p.x) + "," + f1(p.y)).join(" ")}" fill="none" stroke="${INK}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+
+  // ---------- props ----------
+  // P (the pose) is only used by props that follow the body, like the jump rope.
+  function propSVG(pr, t, P) {
+    const w = 3;
+    switch (pr.type) {
+      case "box": { // x,y = top-left in world, w,h
+        return `<rect x="${pr.x}" y="${pr.y}" width="${pr.w}" height="${pr.h}" rx="${pr.r ?? 4}" fill="${WHITE}" stroke="${INK}" stroke-width="2.6"/>`;
+      }
+      case "bench": { // top surface at y, from x to x+w, legs to ground
+        return `<rect x="${pr.x}" y="${pr.y}" width="${pr.w}" height="${pr.th ?? 9}" rx="3" fill="${WHITE}" stroke="${INK}" stroke-width="2.6"/>` +
+          lineSVG({ x: pr.x + 8, y: pr.y + (pr.th ?? 9) }, { x: pr.x + 8, y: 0 }, 2.8) +
+          lineSVG({ x: pr.x + pr.w - 8, y: pr.y + (pr.th ?? 9) }, { x: pr.x + pr.w - 8, y: 0 }, 2.8);
+      }
+      case "barSide": { // bar seen end-on at (x,y) on a post
+        return lineSVG({ x: pr.x + (pr.post ?? 30), y: pr.y }, { x: pr.x + (pr.post ?? 30), y: pr.ground ?? 0 }, 3) +
+          lineSVG({ x: pr.x, y: pr.y }, { x: pr.x + (pr.post ?? 30), y: pr.y }, 3) +
+          `<circle cx="${pr.x}" cy="${pr.y}" r="3.6" fill="${WHITE}" stroke="${INK}" stroke-width="2.6"/>`;
+      }
+      case "barFront": { // horizontal bar from x1 to x2 at y, with end caps like the icon
+        return lineSVG({ x: pr.x1, y: pr.y }, { x: pr.x2, y: pr.y }, 3.6) +
+          lineSVG({ x: pr.x1 + 4, y: pr.y - 5 }, { x: pr.x1 + 4, y: pr.y + 9 }, 3.6) +
+          lineSVG({ x: pr.x2 - 4, y: pr.y - 5 }, { x: pr.x2 - 4, y: pr.y + 9 }, 3.6);
+      }
+      case "dip": { // bars seen from the side: top rail at y from x1..x2, posts to ground
+        return lineSVG({ x: pr.x1, y: pr.y }, { x: pr.x2, y: pr.y }, 3.4) +
+          lineSVG({ x: pr.x1 + 3, y: pr.y }, { x: pr.x1 + 3, y: 0 }, 3.4) +
+          lineSVG({ x: pr.x2 - 3, y: pr.y }, { x: pr.x2 - 3, y: 0 }, 3.4);
+      }
+      case "ring": { // strap from top to ring center
+        return lineSVG({ x: pr.ax, y: pr.ay }, { x: pr.x, y: pr.y - 7 }, 2.2) +
+          `<circle cx="${pr.x}" cy="${pr.y}" r="6.5" fill="none" stroke="${INK}" stroke-width="2.8"/>`;
+      }
+      case "towel": { // wavy towel hanging from bar point (x,y) down len
+        const L = pr.len ?? 34, sw = Math.sin(t * 2) * 1.5;
+        return `<path d="M${pr.x - 3} ${pr.y} C${pr.x - 6 + sw} ${pr.y + L * .35} ${pr.x + sw} ${pr.y + L * .6} ${pr.x - 3} ${pr.y + L} L${pr.x + 4} ${pr.y + L} C${pr.x + 7 + sw} ${pr.y + L * .6} ${pr.x + 1 + sw} ${pr.y + L * .35} ${pr.x + 4} ${pr.y} Z" fill="${WHITE}" stroke="${INK}" stroke-width="2.2" stroke-linejoin="round"/>`;
+      }
+      case "block": { // small block, x center, sitting on ground
+        return `<rect x="${pr.x - pr.w / 2}" y="${-pr.h}" width="${pr.w}" height="${pr.h}" rx="2.5" fill="${WHITE}" stroke="${INK}" stroke-width="2.6"/>`;
+      }
+      case "wedge": { // heel wedge: high side at x1
+        return `<path d="M${pr.x1} 0 L${pr.x2} 0 L${pr.x1} ${-pr.h} Z" fill="${WHITE}" stroke="${INK}" stroke-width="2.4" stroke-linejoin="round"/>`;
+      }
+      case "handles": { // neutral grip handles hanging under a front bar
+        return lineSVG({ x: pr.x1, y: pr.y }, { x: pr.x1, y: pr.y + 14 }, 3.2) + lineSVG({ x: pr.x2, y: pr.y }, { x: pr.x2, y: pr.y + 14 }, 3.2);
+      }
+      case "post": { // dip post seen end-on: vertical post with a grip cap
+        return lineSVG({ x: pr.x, y: pr.y }, { x: pr.x, y: 0 }, 3.4) + lineSVG({ x: pr.x - 7, y: pr.y }, { x: pr.x + 7, y: pr.y }, 3.6);
+      }
+      case "mat": {
+        return `<rect x="${pr.x1}" y="-2.5" width="${pr.x2 - pr.x1}" height="2.5" rx="1.25" fill="${MIST}"/>`;
+      }
+      case "rope": { // jump rope from hand to hand, front view; its middle orbits the body
+        // turns: revolutions per rep, phase: offset in revolutions (0 = middle over the head,
+        // 0.5 = under the feet), r: height of the top arc above the hands, floor: ground y,
+        // side: +1 draws the half in front of the body (list it in propsFront) and the handles,
+        // -1 the half behind (list it in props). trail: faint copies lagging trailStep rad.
+        if (!P) return "";
+        const side = pr.side ?? 1, rw = pr.w ?? 2.4, hl = pr.handle ?? 6;
+        const tip = s => { const A = P.arms[s], v = sub(A.H, A.E), d = len(v) || 1; return add(A.H, mul(v, hl / d)); };
+        const a = tip("l"), b = tip("r");
+        const xm = (a.x + b.x) / 2, yh = (a.y + b.y) / 2, fw = (b.x - a.x) / 2 * (pr.flat ?? 0.6);
+        const top = pr.r ?? 165, low = Math.max(0, (pr.floor ?? 0) - rw / 2 - yh);
+        const turn = (pr.turns ?? 1) * P.p + (pr.phase ?? 0);
+        let s = "";
+        for (let i = pr.trail ?? 0; i >= 0; i--) {
+          const phi = 2 * Math.PI * turn - i * (pr.trailStep ?? 0.4);
+          if ((Math.sin(phi) > 0 ? 1 : -1) !== side) continue;
+          const c = Math.cos(phi);
+          const d = -((top * (1 + c) + low * (1 - c)) / 2) * c; // middle of the rope, relative to the hands
+          const my = yh + d, bx = Math.abs(d) * (pr.bulge ?? 0.15);
+          // two cubics, hand -> middle -> hand, level at the middle
+          const path = `M${f1(a.x)} ${f1(a.y)} C${f1(a.x - bx)} ${f1(a.y + d / 2)} ${f1(xm - fw)} ${f1(my)} ${f1(xm)} ${f1(my)}` +
+            ` C${f1(xm + fw)} ${f1(my)} ${f1(b.x + bx)} ${f1(b.y + d / 2)} ${f1(b.x)} ${f1(b.y)}`;
+          s += `<path d="${path}" fill="none" stroke="${INK}" stroke-width="${f1(i ? rw * 0.8 : rw)}" stroke-linecap="round" stroke-linejoin="round"${i ? ` opacity="${f1(0.36 / i)}"` : ""}/>`;
+        }
+        if (side === 1) s += lineSVG(P.arms.l.H, a, 4.4) + lineSVG(P.arms.r.H, b, 4.4);
+        return s;
+      }
+    }
+    return "";
+  }
+
+  // ---------- clip ----------
+  function makeClip(def) {
+    const view = def.view || "side";
+    const rep = def.rep || 2;
+    const track = buildTrack(def.keys);
+    const D = Object.assign({
+      hx: 0, hy: -60, t: 180, hd: 0,
+      lfx: -4, lfy: 0, rfx: 2, rfy: 0,
+      lth: 0, lk: 0, rth: 0, rk: 0,
+      lua: 0, le: 0, rua: 0, re: 0,
+      lhx: 0, lhy: -60, rhx: 0, rhy: -60,
+    }, view === "front" ? { lfx: -14, rfx: 14 } : {}, def.defaults || {});
+    const front = view === "front";
+    const hipOff = def.hipOff || (front ? { l: { x: -14, y: -2 }, r: { x: 14, y: -2 } } : { l: { x: -3, y: -2 }, r: { x: 2, y: -2 } });
+    const shOff = def.shOff || (front ? { l: { x: -31, y: -66 }, r: { x: 31, y: -66 } } : { l: { x: -6, y: -64 }, r: { x: 6, y: -64 } });
+    const AU = def.armLen ? def.armLen[0] : (front ? 34 : LEN.upper), AF = def.armLen ? def.armLen[1] : (front ? 33 : LEN.fore);
+    const legMode = Object.assign({ l: "ik", r: "ik" }, def.legMode || {});
+    const armMode = Object.assign({ l: "fk", r: "fk" }, def.armMode || {});
+    const kneeSign = Object.assign(front ? { l: -1, r: 1 } : { l: 1, r: 1 }, def.kneeSign || {});
+    const elbowSign = Object.assign(front ? { l: 1, r: -1 } : { l: -1, r: -1 }, def.elbowSign || {});
+    const flex = Object.assign(front ? { l: -1, r: 1 } : { l: 1, r: 1 }, def.flex || {});
+    const footDef = front ? { l: -90, r: 90 } : { l: 90, r: 90 };
+    const z = Object.assign(front
+      ? { legl: 1, legr: 1, body: 5, arml: 7, armr: 7 }
+      : { legl: 1, legr: 2, body: 5, arml: 3, armr: 8 }, def.z || {});
+    const bells = def.bells || [];
+    const headX = def.headPos ? def.headPos.x : (front ? 0 : 4);
+    const headY = def.headPos ? def.headPos.y : -98;
+    const face = def.face || "calm";
+
+    function pose(t) {
+      const tt = ((t % LOOP) + LOOP) % LOOP;
+      const p = (tt % rep) / rep;
+      const c = Object.assign({}, D, track(p));
+      if (def.post) def.post(c, p, tt);
+      const hip = { x: c.hx, y: c.hy };
+      const T = c.t, phi = rad(180 - T);
+      const kp = Math.max(0.45, Math.cos(rad(c.pt || 0)));
+      const W = (lx, ly0) => { const ly = ly0 * kp; return { x: hip.x + lx * Math.cos(phi) - ly * Math.sin(phi), y: hip.y + lx * Math.sin(phi) + ly * Math.cos(phi) }; };
+      const legs = {}, arms = {};
+      ["l", "r"].forEach(s => {
+        const H = W(hipOff[s].x, hipOff[s].y);
+        let K, A;
+        const lt = LEN.thigh * (c[s + "tf"] ?? 1), ls = LEN.shin * (c[s + "sf"] ?? 1);
+        if (legMode[s] === "ik") {
+          const r = ik(H, { x: c[s + "fx"], y: c[s + "fy"] }, lt, ls, kneeSign[s]);
+          K = r.J; A = r.E;
+        } else {
+          const td = (legMode[s] === "fkw" ? 0 : T - 180) + flex[s] * c[s + "th"];
+          K = add(H, mul(dir(td), lt));
+          A = add(K, mul(dir(td - flex[s] * c[s + "k"]), ls));
+        }
+        const fa = (s + "fa") in c ? c[s + "fa"] : footDef[s];
+        const F = add(A, mul(dir(fa), LEN.foot * (c[s + "ff"] ?? 1)));
+        legs[s] = { H, K, A, F };
+        const S0 = W(shOff[s].x, shOff[s].y);
+        let E, Hd;
+        if (armMode[s] === "ik" || armMode[s] === "ikb") {
+          const tgt = armMode[s] === "ikb" ? W(c[s + "hx"], c[s + "hy"]) : { x: c[s + "hx"], y: c[s + "hy"] };
+          const r = ik(S0, tgt, AU, AF, elbowSign[s]);
+          E = r.J; Hd = r.E;
+        } else if (armMode[s] === "blend") {
+          const ua = c[s + "ua"];
+          const e0 = add(S0, mul(dir(ua), AU));
+          const fkH = add(e0, mul(dir(ua + flex[s] * c[s + "e"]), AF));
+          const ikT = (def.blendSpace || "body") === "body" ? W(c[s + "hx"], c[s + "hy"]) : { x: c[s + "hx"], y: c[s + "hy"] };
+          const m = clamp(c[s + "m"] ?? 0, 0, 1);
+          if (m < 0.001) { E = e0; Hd = fkH; }
+          else {
+            const r = ik(S0, lerp(fkH, ikT, m), AU, AF, elbowSign[s]);
+            E = m < 1 ? lerp(e0, r.J, Math.min(1, m * 1.5)) : r.J; Hd = r.E;
+            // keep forearm length honest after elbow blend
+            const v = sub(Hd, E); const L0 = len(v) || 1; Hd = add(E, mul(v, AF / L0));
+          }
+        } else {
+          const ua = armMode[s] === "fkw" ? c[s + "ua"] : T - 180 + flex[s] * c[s + "ua"];
+          E = add(S0, mul(dir(ua), AU));
+          Hd = add(E, mul(dir(ua + flex[s] * c[s + "e"]), AF));
+        }
+        arms[s] = { S: S0, E, H: Hd };
+      });
+      let lean = 180 - T; while (lean > 180) lean -= 360; while (lean < -180) lean += 360;
+      const headRel = (def.headComp ?? -0.35) * clamp(lean, -(def.headClamp ?? 70), def.headClamp ?? 70) + c.hd;
+      const bs = bells.map((b, i) => {
+        const w = (("b" + i + "w") in c) ? c["b" + i + "w"] : (b.hand === "r" ? 1 : b.hand === "mid" ? 0.5 : 0);
+        let at = lerp(arms.l.H, arms.r.H, clamp(w, 0, 1));
+        if (b.offset) at = add(at, b.offset);
+        let a;
+        if (("b" + i + "a") in c) a = c["b" + i + "a"];
+        else { const arm = w > 0.5 ? arms.r : arms.l; a = angOf(sub(arm.H, arm.E)) + (c["b" + i + "f"] || 0) * (b.mirror ? -1 : 1); }
+        const zz = (("b" + i + "z") in c) ? c["b" + i + "z"] : (b.z ?? 9);
+        const op = (("b" + i + "o") in c) ? clamp(c["b" + i + "o"], 0, 1) : 1;
+        return { x: at.x, y: at.y, a, z: zz, op, center: add(at, mul(dir(a), 16 * 0.9)) };
+      });
+      return { c, p, t: tt, hip, T, W, legs, arms, headRel, bells: bs, lean, kp };
+    }
+
+    function leanAt(t) { return pose(t).lean; }
+
+    function svgInner(t, fit) {
+      const P = pose(t);
+      const parts = [];
+      const lw = 3.2, aw = 2.9;
+      // leaf lag from recent motion (deterministic: derived from pose at earlier times)
+      const pa = pose(t - 0.06), pb = pose(t - 0.16);
+      let leaf = -(pa.lean - pb.lean) * 1.6 + (pa.hip.x - pb.hip.x) * -0.6 + (pa.hip.y - pb.hip.y) * 0.5;
+      leaf = clamp(leaf, -24, 24) + 3;
+      // heart pulse
+      let beat = 0;
+      (def.effort || []).forEach(e => {
+        let d = P.p - e; d -= Math.round(d);
+        beat = Math.max(beat, Math.exp(-Math.pow(d / 0.05, 2)));
+      });
+      const faceNow = def.strainAt
+        ? (def.strainAt.some(([a, b]) => P.p >= a && P.p <= b) ? "strain" : "calm")
+        : face;
+      // body group
+      const bodyG = `<g transform="translate(${f1(P.hip.x)} ${f1(P.hip.y)}) rotate(${f1(180 - P.T)}) scale(1 ${f1(P.kp)})">` +
+        `<path d="${CLOUD}" fill="${WHITE}" stroke="${INK}" stroke-width="2.6" stroke-linejoin="round"/>` +
+        `<g transform="translate(${front ? 14 : 18} -44) scale(${f1(1 + beat * 0.45)})"><path d="M0 3 C-6 -2 -6 -7 -3 -8 C-1.5 -8.6 -0.3 -7.6 0 -6.3 C0.3 -7.6 1.5 -8.6 3 -8 C6 -7 6 -2 0 3 Z" fill="${RED}"/></g>` +
+        `</g>`;
+      parts.push([z.body, bodyG]);
+      const HC = P.W(headX, headY);
+      parts.push([z.head ?? 6, `<g transform="translate(${f1(HC.x)} ${f1(HC.y)}) rotate(${f1(180 - P.T + P.headRel)})">${headSVG(leaf, faceNow)}</g>`]);
+      ["l", "r"].forEach(s => {
+        const L = P.legs[s];
+        parts.push([("zg" + s) in P.c ? P.c["zg" + s] : z["leg" + s], haloPoly([L.H, L.K, L.A, L.F], lw) + polySVG([L.H, L.K, L.A], lw) + lineSVG(L.A, L.F, lw)]);
+        const A = P.arms[s];
+        parts.push([("z" + s) in P.c ? P.c["z" + s] : z["arm" + s], haloPoly([A.S, A.E, A.H], aw) + polySVG([A.S, A.E, A.H], aw) + `<circle cx="${f1(A.H.x)}" cy="${f1(A.H.y)}" r="2.5" fill="${INK}"/>`]);
+      });
+      P.bells.forEach((b, i) => {
+        if (b.op <= 0.01) return;
+        const s = bellSVG(b.x, b.y, b.a, 0.9);
+        parts.push([b.z + i * 0.01, b.op < 1 ? `<g opacity="${f1(b.op)}">${s}</g>` : s]);
+      });
+      // motion lines behind a bell or limb
+      (def.motion || []).forEach(m => {
+        const [p0, p1] = m.win;
+        let ph = P.p;
+        if (ph < p0 || ph > p1) return;
+        const show = Math.sin(Math.PI * (ph - p0) / (p1 - p0));
+        const pt = tt => { const q = pose(tt); return m.bell != null ? q.bells[m.bell].center : (m.hand ? q.arms[m.hand].H : q.legs[m.foot].A); };
+        const a = pt(t), b = pt(t - 0.1);
+        const dx = a.x - b.x, dy = a.y - b.y, L = Math.hypot(dx, dy);
+        if (L < 2) return;
+        const nx = -dy / L, ny = dx / L;
+        let s = "";
+        [-1, 0, 1].forEach(k => {
+          const off = k * 7, back = m.back ?? 14;
+          const ux = dx / L, uy = dy / L;
+          const x2 = a.x - ux * back + nx * off, y2 = a.y - uy * back + ny * off;
+          const x1 = x2 - ux * (k === 0 ? 14 : 9), y1 = y2 - uy * (k === 0 ? 14 : 9);
+          s += `<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="${INK}" stroke-width="2.2" stroke-linecap="round" opacity="${f1(show * (k === 0 ? 1 : 0.7))}"/>`;
+        });
+        parts.push([m.z ?? 0.5, s]);
+      });
+      // sweat drop: flicks off the head at listed loop times
+      const sweatTimes = def.sweat || [];
+      sweatTimes.forEach(st => {
+        const sp = (P.t - st) / 0.7;
+        if (sp <= 0 || sp >= 1) return;
+        const Q = pose(st);
+        const hc = Q.W(headX, headY);
+        const back = front ? (st % 2 < 1 ? -1 : 1) : -1;
+        const x = hc.x + back * (32 + sp * 20), y = hc.y - 20 - Math.sin(sp * Math.PI) * 14 + sp * 12;
+        const op = Math.min(1, sp * 5, (1 - sp) * 4);
+        parts.push([20, `<g transform="translate(${f1(x)} ${f1(y)}) rotate(${f1(back * (40 - sp * 60))}) scale(1.4)" opacity="${f1(op)}"><path d="M0 -6 C3 -2 4 1 4 3 A4 4 0 0 1 -4 3 C-4 1 -3 -2 0 -6 Z" fill="${WHITE}" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/></g>`]);
+      });
+      parts.sort((a, b) => a[0] - b[0]);
+
+      // shadow
+      let sx, srx;
+      if (def.shadow) { const s = typeof def.shadow === "function" ? def.shadow(P) : def.shadow; sx = s.x; srx = s.rx; }
+      else {
+        const xs = [P.hip.x, P.legs.l.A.x, P.legs.r.A.x, P.W(0, -40).x];
+        sx = xs.reduce((a, b) => a + b, 0) / xs.length;
+        srx = clamp((Math.max(...xs) - Math.min(...xs)) / 2 + 42, 44, 110);
+      }
+      let ground = `<ellipse cx="${f1(sx)}" cy="1.5" rx="${f1(srx)}" ry="4.8" fill="${MIST}"/>`;
+      if (def.scroll) {
+        const sp = def.scroll, gap = 40;
+        const off = ((P.t * sp) % gap + gap) % gap;
+        let ticks = "";
+        for (let x = -240; x <= 240; x += gap) {
+          const xx = x - off;
+          const fade = clamp(1 - Math.abs(xx) / 200, 0, 1);
+          ticks += `<line x1="${f1(xx)}" y1="9" x2="${f1(xx + 12)}" y2="9" stroke="${INK}" stroke-width="2.2" stroke-linecap="round" opacity="${f1(fade * 0.35)}"/>`;
+        }
+        ground += ticks;
+      }
+      const props = (def.props || []).map(pr => propSVG(typeof pr === "function" ? pr(P) : pr, P.t, P)).join("");
+      const propsFront = (def.propsFront || []).map(pr => propSVG(typeof pr === "function" ? pr(P) : pr, P.t, P)).join("");
+      return ground + props + parts.map(p => p[1]).join("") + propsFront;
+    }
+
+    // bounding box in world units, sampled over the loop
+    function bbox() {
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      const pt = (x, y, r) => { x0 = Math.min(x0, x - r); x1 = Math.max(x1, x + r); y0 = Math.min(y0, y - r); y1 = Math.max(y1, y + r); };
+      for (let i = 0; i < 120; i++) {
+        const P = pose(i * LOOP / 120);
+        for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2; const q = P.W(Math.cos(a) * 50, -36 + Math.sin(a) * 46); pt(q.x, q.y, 0); }
+        const hc = P.W(headX, headY);
+        pt(hc.x, hc.y, 40);
+        const lt = P.W(headX + 12, headY - 60); pt(lt.x, lt.y, 4);
+        ["l", "r"].forEach(s => { [P.legs[s].K, P.legs[s].A, P.legs[s].F].forEach(q => pt(q.x, q.y, 3)); [P.arms[s].E, P.arms[s].H].forEach(q => pt(q.x, q.y, 3)); });
+        P.bells.forEach(b => { if (b.op > 0.01) pt(b.center.x, b.center.y, 16); });
+      }
+      pt(0, 4, 0);
+      (def.fitExtra || []).forEach(([x, y]) => pt(x, y, 0));
+      return { x0, y0, x1, y1 };
+    }
+
+    let fitCache = null;
+    function fit() {
+      if (fitCache) return fitCache;
+      const b = bbox();
+      const w = b.x1 - b.x0, h = b.y1 - b.y0;
+      const S = Math.min(def.maxScale || 1.45, 344 / w, 344 / h);
+      const cx = (b.x0 + b.x1) / 2;
+      // keep floor low in the frame when there is room
+      let oy = 200 - ((b.y0 + b.y1) / 2) * S;
+      const groundY = oy;
+      if (groundY < 360) oy = Math.min(360, 400 - 28 - b.y1 * S);
+      // ensure top fits
+      if (b.y0 * S + oy < 26) oy = 26 - b.y0 * S;
+      fitCache = { S, ox: 200 - cx * S, oy };
+      return fitCache;
+    }
+
+    function svgAt(t, opts) {
+      const F = fit();
+      const size = (opts && opts.size) || null;
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"${size ? ` width="${size}" height="${size}"` : ""}>` +
+        `<rect width="400" height="400" fill="${WHITE}"/>` +
+        `<g transform="translate(${f1(F.ox)} ${f1(F.oy)}) scale(${f1(F.S)})">${svgInner(t)}</g></svg>`;
+    }
+    function innerAt(t) {
+      const F = fit();
+      return `<rect width="400" height="400" fill="${WHITE}"/><g transform="translate(${f1(F.ox)} ${f1(F.oy)}) scale(${f1(F.S)})">${svgInner(t)}</g>`;
+    }
+    return { svgAt, innerAt, pose, fit, loop: LOOP, def };
+  }
+
+  const API = { makeClip, LOOP, LEN, dir, rad };
+  if (typeof module !== "undefined" && module.exports) module.exports = API;
+  else root.OogEngine = API;
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
+<script>(function(){var __S={"./lib.js": function (module, exports, require) {
+// helpers for authoring exercises
+const LR = ["fx", "fy", "fa", "th", "k", "ua", "e", "hx", "hy", "m", "tf", "sf", "ff"];
+const NEG_X = new Set(["hx", "lfx", "rfx", "lhx", "rhx"]);
+
+// sweat flick times on later reps at a given phase
+function sw(rep, n) {
+  const out = [];
+  for (let r = 0; r < 10 / rep; r++) { const t = r * rep + n * rep; if (t > 5.0 && t < 9.25) out.push(+t.toFixed(2)); }
+  return out.slice(-2);
+}
+
+// mirror a set of front-view keys left<->right
+function mirror(keys, opt = {}) {
+  const fkwArms = opt.fkwArms || false;
+  return keys.map(([p, o]) => {
+    const n = {};
+    for (const k in o) {
+      let v = o[k], key = k;
+      const m = /^([lr])(.+)$/.exec(k);
+      if (m && LR.includes(m[2])) key = (m[1] === "l" ? "r" : "l") + m[2];
+      else if (k === "zl") key = "zr"; else if (k === "zr") key = "zl";
+      else if (k === "zgl") key = "zgr"; else if (k === "zgr") key = "zgl";
+      if (NEG_X.has(k)) v = -v;
+      if (/^[lr]fa$/.test(k)) v = -v;
+      if (fkwArms && /^[lr]ua$/.test(k)) v = -v;
+      if (k === "t") v = 360 - v;
+      if (k === "hd") v = -v;
+      if (/^b\d[fa]$/.test(k)) v = -v;
+      if (/^b\dw$/.test(k)) v = 1 - v;
+      n[key] = v;
+    }
+    return [p, n];
+  });
+}
+
+// squeeze two key lists into first and second half of one cycle
+function halves(a, b) {
+  return [...a.map(([p, o]) => [p / 2, o]), ...b.map(([p, o]) => [0.5 + p / 2, o])];
+}
+
+// stepping legs drawn in profile (torso faces you): walking or high-knee marching
+function stepLegs(c, p, opt) {
+  const { high = false } = opt || {};
+  let maxExt = 0;
+  ["l", "r"].forEach(s => {
+    const off = s === "r" ? 0.5 : 0;
+    let th, k, fa = 90;
+    if (high) {
+      const q = (p + off) % 1;
+      const lift = q < 0.5 ? Math.pow(Math.sin(Math.PI * q / 0.5), 0.75) : 0;
+      th = 82 * lift; k = 96 * lift; fa = 90 - 28 * lift;
+    } else {
+      const ph = 2 * Math.PI * (p + off);
+      th = 24 * Math.sin(ph);
+      k = 46 * Math.pow(Math.max(0, Math.cos(ph)), 2);
+      fa = 90 - 20 * Math.max(0, Math.cos(ph));
+    }
+    c[s + "th"] = th; c[s + "k"] = k; c[s + "fa"] = fa; c[s + "tf"] = 1; c[s + "sf"] = 1;
+    const r = Math.PI / 180;
+    const ext = 30 * Math.cos(th * r) + 30 * Math.cos((th - k) * r);
+    maxExt = Math.max(maxExt, ext);
+  });
+  c.hy = 2 - maxExt + 0.5;
+  c.t = (c.t ?? 180) + (high ? 1.5 : 1) * Math.sin(4 * Math.PI * p);
+}
+
+module.exports = { sw, mirror, halves, stepLegs };
+},
+"./ex_legs.js": function (module, exports, require) {
+const { sw, mirror, halves } = require("./lib.js");
+const L = [];
+const add = d => (L.push(Object.assign({ cat: "legs-squat" }, d)), d);
+
+const ST = { hx: 0, hy: -57.5, t: 180, lfx: -8, rfx: 2, lfy: 0, rfy: 0 };
+const GOB = { lhx: 50, lhy: -40, rhx: 54, rhy: -40, b0a: 180 };
+const goblet = { armMode: { l: "ikb", r: "ikb" }, bells: [{ hand: "mid" }] };
+
+// ---------------- squat family ----------------
+add({
+  id: "squat", name: "Squat", sub: "Squat", rep: 2.5, armMode: { l: "fkw", r: "fkw" },
+  keys: [
+    [0.00, { ...ST, lua: 8, rua: 8, le: 10, re: 10 }],
+    [0.10, {}],
+    [0.48, { hx: -17, hy: -27, t: 148, lua: 88, rua: 88, le: 0, re: 0 }],
+    [0.56, {}],
+    [0.92, { ...ST, lua: 8, rua: 8, le: 10, re: 10 }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.5, 0.78]],
+});
+
+const gobletSquat = (rep, down, holdEnd, up) => [
+  [0.00, { ...ST, ...GOB }],
+  [0.06, {}],
+  [down, { hx: -15, hy: -27, t: 156 }],
+  [holdEnd, {}],
+  [up, { ...ST }],
+];
+add({ id: "goblet-squat", name: "Goblet Squat", sub: "Squat", rep: 2.5, ...goblet,
+  keys: gobletSquat(2.5, 0.48, 0.56, 0.92), effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.5, 0.8]] });
+
+add({ id: "tempo-goblet-squat", name: "Tempo Goblet Squat", sub: "Squat", rep: 5, ...goblet,
+  keys: [
+    [0.00, { ...ST, ...GOB }],
+    [0.08, {}],
+    [0.62, { hx: -15, hy: -27, t: 156 }],   // slow 3-count lower
+    [0.70, {}],
+    [0.86, { ...ST }],                       // stand up with intent
+  ],
+  effort: [0.78], sweat: [7.9], strainAt: [[0.45, 0.88]] });
+
+add({ id: "pause-squat", name: "Pause Squat", sub: "Squat", rep: 10 / 3, ...goblet,
+  keys: [
+    [0.00, { ...ST, ...GOB }],
+    [0.06, {}],
+    [0.32, { hx: -15, hy: -27, t: 156 }],
+    [0.66, { hx: -15, hy: -27.5, t: 156 }],  // hold the bottom
+    [0.90, { ...ST }],
+  ],
+  effort: [0.76], sweat: sw(10 / 3, 0.8), strainAt: [[0.32, 0.86]] });
+
+add({ id: "front-rack-squat", name: "Front Rack Squat", sub: "Squat", view: "front", rep: 2.5,
+  armMode: { l: "ikb", r: "ikb" },
+  bells: [{ hand: "l" }, { hand: "r" }],
+  keys: [
+    [0.00, { hx: 0, hy: -57, lfx: -24, rfx: 24, lfa: -65, rfa: 65, lhx: -40, lhy: -42, rhx: 40, rhy: -42, b0f: 140, b1f: -140, pt: 0 }],
+    [0.08, {}],
+    [0.48, { hy: -30, pt: 22 }],
+    [0.56, {}],
+    [0.92, { hy: -57, pt: 0 }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.5, 0.8]] });
+
+add({ id: "cyclist-squat", name: "Cyclist Squat", sub: "Squat", rep: 2.5, ...goblet,
+  defaults: { lfa: 62, rfa: 62 },
+  props: [{ type: "wedge", x1: -14, x2: 18, h: 10 }],
+  keys: [
+    [0.00, { ...ST, hx: -4, hy: -64, lfx: -8, rfx: -6, lfy: -8, rfy: -8, ...GOB }],
+    [0.08, {}],
+    [0.48, { hx: -6, hy: -30, t: 170 }],
+    [0.56, {}],
+    [0.92, { hx: -4, hy: -64, t: 180 }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.5, 0.8]] });
+
+// ---------------- lunges ----------------
+const LST = { hx: 2, hy: -57.5, t: 180, lfx: -2, rfx: 6, lfy: 0, rfy: 0, lfa: 90 };
+add({ id: "single-leg-reverse-lunge", name: "Single-Leg Reverse Lunge", sub: "Lunge", rep: 2.5, ...goblet,
+  keys: [
+    [0.00, { ...LST, ...GOB }],
+    [0.08, {}],
+    [0.24, { hx: -2, hy: -52, lfx: -32, lfy: -10, lfa: 40 }],
+    [0.46, { hx: -10, hy: -32, t: 176, lfx: -52, lfy: -6, lfa: 20 }],
+    [0.56, {}],
+    [0.76, { hx: -2, hy: -52, t: 180, lfx: -30, lfy: -10, lfa: 40 }],
+    [0.92, { ...LST }],
+  ],
+  effort: [0.68], sweat: sw(2.5, 0.72), strainAt: [[0.46, 0.76]] });
+
+add({ id: "forward-lunge", name: "Forward Lunge", sub: "Lunge", rep: 2.5, ...goblet,
+  keys: [
+    [0.00, { ...ST, ...GOB }],
+    [0.08, {}],
+    [0.24, { hx: 6, hy: -55, rfx: 30, rfy: -12 }],
+    [0.42, { hx: 14, hy: -32, t: 178, rfx: 46, rfy: 0, lfx: -10, lfy: -5, lfa: 25 }],
+    [0.54, {}],
+    [0.72, { hx: 6, hy: -55, t: 180, rfx: 30, rfy: -12, lfx: -8, lfy: 0, lfa: 90 }],
+    [0.88, { ...ST }],
+  ],
+  effort: [0.62], sweat: sw(2.5, 0.68), strainAt: [[0.42, 0.7]] });
+
+add({ id: "walking-lunge", name: "Walking Lunge", sub: "Lunge", rep: 2.5, ...goblet, scroll: 40,
+  keys: [[0, { ...ST, ...GOB }]],
+  post(c, p) {
+    const half = p < 0.5 ? 0 : 1, h = (p * 2) % 1;
+    const front = half === 0 ? "r" : "l", back = half === 0 ? "l" : "r";
+    c[front + "fx"] = 25 - 50 * h; c[front + "fy"] = 0; c[front + "fa"] = 90;
+    if (h < 0.55) {
+      c[back + "fx"] = -25 - 50 * h; c[back + "fy"] = -Math.min(1, h / 0.15) * 5;
+      c[back + "fa"] = 90 - 70 * Math.sin(Math.min(1, h / 0.5) * Math.PI / 2);
+    } else {
+      const s = (h - 0.55) / 0.45, e = s * s * (3 - 2 * s);
+      c[back + "fx"] = -52.5 + 77.5 * e; c[back + "fy"] = -5 - 14 * Math.sin(Math.PI * s) + 5 * e;
+      c[back + "fa"] = 20 + 70 * e;
+    }
+    const depth = h < 0.35 ? h / 0.35 : h < 0.75 ? 1 - (h - 0.35) / 0.4 : 0;
+    const d = depth * depth * (3 - 2 * depth);
+    c.hy = (h < 0.75 ? -51 : -51 - 5 * Math.sin(Math.PI * (h - 0.75) / 0.25)) + 21 * d;
+    c.hx = -6 * d;
+    c.t = 180 - 3 * d;
+  },
+  effort: [0.2, 0.7], sweat: [6.6, 8.9], strainAt: [[0.12, 0.3], [0.62, 0.8]] });
+
+add({ id: "bulgarian-split-squat", name: "Bulgarian Split Squat", sub: "Lunge", rep: 2.5, ...goblet,
+  props: [{ type: "bench", x: -104, y: -30, w: 52 }],
+  defaults: { lfa: -80 },
+  keys: [
+    [0.00, { hx: -10, hy: -52, t: 178, rfx: 14, rfy: 0, lfx: -66, lfy: -36, ...GOB }],
+    [0.08, {}],
+    [0.48, { hx: -18, hy: -30, t: 172 }],
+    [0.56, {}],
+    [0.92, { hx: -10, hy: -52, t: 178 }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.48, 0.8]] });
+
+add({ id: "step-up", name: "Step-Up", sub: "Lunge", rep: 10 / 3, armMode: { l: "fkw", r: "fkw" },
+  bells: [{ hand: "l", z: 2.5 }, { hand: "r" }],
+  props: [{ type: "box", x: 12, y: -28, w: 64, h: 28 }],
+  defaults: { lua: 2, rua: 2, le: 4, re: 4, b0a: 0, b1a: 0 },
+  keys: [
+    [0.00, { hx: -16, hy: -57.5, t: 180, lfx: -24, lfy: 0, rfx: -12, rfy: 0 }],
+    [0.06, {}],
+    [0.16, { rfx: 14, rfy: -44 }],
+    [0.24, { rfx: 34, rfy: -28 }],
+    [0.48, { hx: 30, hy: -85.5, t: 178, lfx: 6, lfy: -30 }],
+    [0.54, { lfx: 24, lfy: -28, t: 180 }],
+    [0.62, {}],
+    [0.72, { lfx: -4, lfy: -18 }],
+    [0.82, { hx: -16, hy: -57.5, lfx: -24, lfy: 0 }],
+    [0.90, { rfx: 12, rfy: -40 }],
+    [0.97, { rfx: -12, rfy: 0 }],
+  ],
+  effort: [0.38], sweat: sw(10 / 3, 0.4), strainAt: [[0.24, 0.5]] });
+
+add({ id: "skater-squat", name: "Skater Squat Progression", sub: "Lunge", rep: 2.5,
+  armMode: { l: "fkw", r: "fkw" }, legMode: { l: "fk", r: "ik" },
+  keys: [
+    [0.00, { hx: 2, hy: -57.5, t: 180, rfx: 6, lth: -10, lk: 85, lfa: 10, lua: 30, rua: 30, le: 10, re: 10 }],
+    [0.08, {}],
+    [0.48, { hx: -10, hy: -32, t: 140, lth: 30, lk: 100, lua: 88, rua: 88, le: 0, re: 0 }],
+    [0.56, {}],
+    [0.92, { hx: 2, hy: -57.5, t: 180, lth: -10, lk: 85, lua: 30, rua: 30, le: 10, re: 10 }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.48, 0.8]] });
+
+// ---------------- mobility (front view) ----------------
+const FG = { lhx: -4, lhy: -28, rhx: 4, rhy: -28, b0a: 180 };
+const cossackR = [
+  [0.00, { hx: 0, hy: -50, t: 180, lfx: -54, rfx: 54, lfy: 0, rfy: 0, lfa: -90, rfa: 90, pt: 0, ...FG }],
+  [0.08, {}],
+  [0.44, { hx: 40, hy: -24, t: 176, lfa: 180, pt: 18 }],
+  [0.60, {}],
+  [0.94, { hx: 0, hy: -50, t: 180, lfa: -90, pt: 0 }],
+];
+add({ id: "cossack-squat", name: "Cossack Squat", sub: "Mobility", view: "front", rep: 5, ...goblet,
+  keys: halves(cossackR, mirror(cossackR)), effort: [0.3, 0.8], sweat: [8.3], strainAt: [[0.2, 0.36], [0.7, 0.86]] });
+
+const latR = [
+  [0.00, { hx: 0, hy: -57.5, t: 180, lfx: -12, rfx: 12, lfy: 0, rfy: 0, lfa: -90, rfa: 90, pt: 0, ...FG }],
+  [0.08, {}],
+  [0.22, { hx: 6, hy: -56, rfx: 36, rfy: -10 }],
+  [0.36, { hx: 26, hy: -36, rfx: 52, rfy: 0, pt: 26, t: 178 }],
+  [0.58, {}],
+  [0.74, { hx: 6, hy: -56, rfx: 36, rfy: -10, pt: 0, t: 180 }],
+  [0.90, { hx: 0, hy: -57.5, rfx: 12, rfy: 0 }],
+];
+add({ id: "lateral-lunge", name: "Lateral Lunge", sub: "Mobility", view: "front", rep: 5, ...goblet,
+  keys: halves(latR, mirror(latR)), effort: [0.33, 0.83], sweat: [8.4], strainAt: [[0.18, 0.32], [0.68, 0.82]] });
+
+module.exports = L;
+},
+"./ex_hinge.js": function (module, exports, require) {
+const { sw, mirror, halves } = require("./lib.js");
+const L = [];
+const add = d => (L.push(Object.assign({ cat: "hinge" }, d)), d);
+const ST = { hx: 0, hy: -57.5, t: 180, lfx: -8, rfx: 2, lfy: 0, rfy: 0 };
+
+// ======================= GRIND =======================
+add({ id: "romanian-deadlift", name: "Romanian Deadlift", sub: "Grind", rep: 2.5,
+  armMode: { l: "fkw", r: "fkw" }, bells: [{ hand: "l", z: 2.9 }, { hand: "r" }],
+  defaults: { b0a: 0, b1a: 0, le: 0, re: 0 },
+  keys: [
+    [0.00, { ...ST, lua: 4, rua: 4 }],
+    [0.08, {}],
+    [0.48, { hx: -24, hy: -56, t: 129, lua: 0, rua: 0 }],
+    [0.56, {}],
+    [0.92, { ...ST, lua: 4, rua: 4 }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.5, 0.8]] });
+
+add({ id: "kettlebell-deadlift", name: "Kettlebell Deadlift", sub: "Grind", rep: 2.5,
+  armMode: { l: "ik", r: "ik" }, bells: [{ hand: "mid", z: 1.5 }],
+  defaults: { b0a: 0, lfx: -12, rfx: 0 },
+  keys: [
+    [0.00, { hx: -5, hy: -57.5, t: 180, lhx: -2, lhy: -48, rhx: 0, rhy: -48 }],
+    [0.10, {}],
+    [0.48, { hx: -40, hy: -40, t: 138, lhx: -7, lhy: -27, rhx: -5, rhy: -27 }],
+    [0.58, {}],
+    [0.92, { hx: -5, hy: -57.5, t: 180, lhx: -2, lhy: -48, rhx: 0, rhy: -48 }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.56, 0.82]] });
+
+add({ id: "single-leg-deadlift", name: "Single-Leg Deadlift", sub: "Grind", rep: 2.5,
+  armMode: { l: "fkw", r: "fkw" }, legMode: { l: "fk", r: "ik" }, bells: [{ hand: "r" }],
+  defaults: { b0a: 0, rfx: 2, lfa: 90 },
+  keys: [
+    [0.00, { hx: 0, hy: -57.5, t: 180, lth: 0, lk: 6, lua: -6, rua: 2, le: 10, re: 0, lfa: 70 }],
+    [0.08, {}],
+    [0.48, { hx: -10, hy: -58, t: 124, lth: 2, lk: 6, lua: -40, rua: 0, lfa: 20 }],
+    [0.58, {}],
+    [0.92, { hx: 0, hy: -57.5, t: 180, lth: 0, lk: 6, lua: -6, rua: 2, lfa: 70 }],
+  ],
+  effort: [0.74], sweat: sw(2.5, 0.78), strainAt: [[0.48, 0.8]] });
+
+add({ id: "good-morning", name: "Good Morning", sub: "Grind", rep: 2.5,
+  armMode: { l: "ikb", r: "ikb" }, bells: [{ hand: "mid" }],
+  keys: [
+    [0.00, { ...ST, lhx: 50, lhy: -40, rhx: 54, rhy: -40, b0a: 180 }],
+    [0.08, {}],
+    [0.48, { hx: -22, hy: -54, t: 106 }],
+    [0.56, {}],
+    [0.92, { ...ST }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.5, 0.8]] });
+
+add({ id: "hip-thrust", name: "Hip Thrust", sub: "Grind", rep: 2.5,
+  headComp: -1.05, headClamp: 180, armMode: { l: "ikb", r: "ikb" }, bells: [{ hand: "mid" }],
+  hipOff: { l: { x: -40, y: 0 }, r: { x: -36, y: 0 } }, shOff: { l: { x: 10, y: -60 }, r: { x: 16, y: -60 } },
+  props: [{ type: "bench", x: -148, y: -26, w: 70 }],
+  defaults: { lfx: 14, rfx: 20, lfy: 0, rfy: 0, lhx: 42, lhy: -8, rhx: 46, rhy: -8, b0a: 0 },
+  keys: [
+    [0.00, { t: 247 }],
+    [0.10, {}],
+    [0.46, { t: 268 }],
+    [0.58, {}],
+    [0.92, { t: 247 }],
+  ],
+  post(c) { // pivot the upper back on the bench edge
+    const phi = (180 - c.t) * Math.PI / 180, P = { x: -50, y: -66 }, B = { x: -92, y: -24 };
+    c.hx = B.x - (P.x * Math.cos(phi) - P.y * Math.sin(phi));
+    c.hy = B.y - (P.x * Math.sin(phi) + P.y * Math.cos(phi));
+  },
+  shadow: { x: -40, rx: 110 },
+  effort: [0.32], sweat: sw(2.5, 0.4), strainAt: [[0.2, 0.6]] });
+
+// ======================= BALLISTIC =======================
+// side-view swing path (arm world angle)
+const SW = {
+  top: { hx: 0, hy: -57.5, t: 184 },
+  fall: { hx: 0, hy: -57.5, t: 178 },
+  hike: { hx: -2, hy: -56, t: 166 },
+  bot: { hx: -13, hy: -48, t: 124 },
+  snap: { hx: -4, hy: -55, t: 164 },
+  up: { hx: 0, hy: -57.5, t: 180 },
+};
+const swingArm = (s, a) => ({ [s + "ua"]: a });
+const swingKeys = (arms) => [
+  [0.00, { ...SW.top, ...arms(86) }],
+  [0.22, { ...SW.fall, ...arms(40) }],
+  [0.34, { ...SW.hike, ...arms(5) }],
+  [0.50, { ...SW.bot, ...arms(-34) }],
+  [0.64, { ...SW.snap, ...arms(10) }],
+  [0.76, { ...SW.up, ...arms(55) }],
+  [0.90, { ...SW.top, ...arms(86) }],
+];
+const swingBase = { rep: 2, defaults: { lfx: -8, rfx: 2, le: 4, re: 4 }, armMode: { l: "fkw", r: "fkw" } };
+add({ id: "two-hand-swing", name: "Two-Hand Swing", sub: "Ballistic · Beginner", ...swingBase,
+  keys: swingKeys(a => ({ lua: a, rua: a })),
+  bells: [{ hand: "mid" }], effort: [0.64], motion: [{ bell: 0, win: [0.62, 0.86] }], sweat: sw(2, 0.66), strainAt: [[0.56, 0.7]] });
+
+add({ id: "one-hand-swing", name: "One-Hand Swing", sub: "Ballistic · Beginner", ...swingBase,
+  keys: swingKeys(a => ({ rua: a, lua: a * 0.35 - 12, le: 14 })),
+  bells: [{ hand: "r" }], effort: [0.64], motion: [{ bell: 0, win: [0.62, 0.86] }], sweat: sw(2, 0.66), strainAt: [[0.56, 0.7]] });
+
+// hand-to-hand: switch at the float, two swings per cycle
+const h2h = (() => {
+  const A = swingKeys(a => ({ rua: a, lua: a > 60 ? a - 4 : -10, b0w: 1 }));
+  A[0][1].lua = 82; A[6][1].lua = 82;           // free hand meets the bell at the top
+  A[6][1].b0w = 0.5; A[0][1].b0w = 1;
+  return A;
+})();
+add({ id: "hand-to-hand-swing", name: "Hand-to-Hand Swing", sub: "Ballistic · Intermediate", ...swingBase, rep: 4,
+  keys: halves(h2h.map(([p, o], i) => [p, Object.assign({}, o, i === 0 ? { b0w: 0.5 } : {})]),
+    h2h.map(([p, o], i) => {
+      const n = {}; for (const k in o) { if (k === "lua") n.rua = o[k]; else if (k === "rua") n.lua = o[k]; else n[k] = o[k]; }
+      n.b0w = i === 0 ? 0.5 : 0; return [p, n];
+    })),
+  bells: [{ hand: "swap" }], effort: [0.32, 0.82], motion: [{ bell: 0, win: [0.31, 0.43] }, { bell: 0, win: [0.81, 0.93] }],
+  sweat: [6.6, 8.6], strainAt: [[0.28, 0.35], [0.78, 0.85]] });
+
+// alternating: two bells in opposition
+add({ id: "alternating-swing", name: "Alternating Swing", sub: "Ballistic · Intermediate", rep: 2.5,
+  defaults: { lfx: -8, rfx: 2, le: 4, re: 4 }, armMode: { l: "fkw", r: "fkw" },
+  bells: [{ hand: "l", z: 2.9 }, { hand: "r" }],
+  keys: [
+    [0.00, { hx: -9, hy: -49, t: 140, rua: 82, lua: -30 }],
+    [0.14, { hx: -6, hy: -52, t: 150, rua: 50, lua: -10 }],
+    [0.25, { hx: -2, hy: -56, t: 170, rua: 10, lua: 10 }],
+    [0.36, { hx: -6, hy: -52, t: 150, rua: -10, lua: 50 }],
+    [0.50, { hx: -9, hy: -49, t: 140, rua: -30, lua: 82 }],
+    [0.64, { hx: -6, hy: -52, t: 150, rua: -10, lua: 50 }],
+    [0.75, { hx: -2, hy: -56, t: 170, rua: 10, lua: 10 }],
+    [0.86, { hx: -6, hy: -52, t: 150, rua: 50, lua: -10 }],
+  ],
+  effort: [0.25, 0.75], motion: [{ bell: 1, win: [0.8, 0.98] }, { bell: 0, win: [0.3, 0.48] }], sweat: [6.3, 8.8] });
+
+// rack position in body frame (side view)
+const RACK_R = { rhx: 42, rhy: -44 }, RACK_L = { lhx: 36, lhy: -44 };
+const cleanKeys = (s, free) => {
+  const R = s === "r" ? RACK_R : RACK_L, b = s === "r" ? "b0" : "b0";
+  const o = (x) => Object.assign({}, x);
+  return [
+    [0.00, { ...SW.up, t: 182, [s + "m"]: 1, [s + "ua"]: 30, [b + "f"]: 150, ...R, ...free(-6) }],
+    [0.16, {}],
+    [0.30, { ...SW.fall, [s + "m"]: 0, [s + "ua"]: 30, [b + "f"]: 0, ...free(-4) }],
+    [0.44, { ...SW.bot, [s + "ua"]: -34, ...free(-40) }],
+    [0.57, { ...SW.snap, [s + "ua"]: 10, ...free(-10) }],
+    [0.67, { ...SW.up, [s + "m"]: 0.55, [s + "ua"]: 40, [b + "f"]: 70 }],
+    [0.77, { t: 182, [s + "m"]: 1, [b + "f"]: 150, ...free(-6) }],
+  ];
+};
+add({ id: "clean", name: "Clean", sub: "Ballistic · Intermediate", rep: 2.5,
+  armMode: { l: "fkw", r: "blend" }, defaults: { lfx: -8, rfx: 2, le: 10, re: 0 },
+  keys: cleanKeys("r", a => ({ lua: a })),
+  bells: [{ hand: "r" }], effort: [0.57], motion: [{ bell: 0, win: [0.55, 0.75] }], sweat: sw(2.5, 0.6), strainAt: [[0.5, 0.62]] });
+
+add({ id: "ballistic-clean-variations", name: "Ballistic Clean Variations (Double Clean)", sub: "Ballistic · Advanced", rep: 2.5,
+  armMode: { l: "blend", r: "blend" }, defaults: { lfx: -12, rfx: 4, le: 0, re: 0 },
+  keys: cleanKeys("r", () => ({})).map(([p, o]) => {
+    const n = Object.assign({}, o);
+    if ("rm" in o) n.lm = o.rm; if ("rua" in o) n.lua = o.rua; if ("b0f" in o) n.b1f = o.b0f;
+    if ("rhx" in o) { n.lhx = 34; n.lhy = -44; }
+    if (p === 0.44) { n.hx = -15; n.hy = -43; n.t = 128; }
+    return [p, n];
+  }),
+  bells: [{ hand: "l", z: 2.9 }, { hand: "r" }].reverse(), effort: [0.57], motion: [{ bell: 0, win: [0.55, 0.75] }], sweat: sw(2.5, 0.6), strainAt: [[0.5, 0.62]] });
+
+add({ id: "dead-clean", name: "Dead Clean", sub: "Ballistic · Beginner", rep: 2.5,
+  armMode: { l: "fkw", r: "blend" }, defaults: { lfx: -10, rfx: 2, le: 10, re: 0 },
+  keys: [
+    [0.00, { hx: -38, hy: -45, t: 140, rm: 0, rua: -2, b0f: 0, lua: -20 }],   // bell parked on the floor
+    [0.10, {}],
+    [0.26, { hx: -4, hy: -55, t: 166, rua: 12, lua: -8 }],
+    [0.36, { hx: 0, hy: -57.5, t: 180, rm: 0.55, rua: 40, b0f: 70 }],
+    [0.46, { t: 182, rm: 1, b0f: 150, lua: -6 }],
+    [0.62, {}],
+    [0.76, { t: 178, rm: 0, rua: 20, b0f: 0 }],
+    [0.92, { hx: -38, hy: -45, t: 140, rua: -2, lua: -20 }],
+  ],
+  blendSpace: "body", bells: [{ hand: "r" }], effort: [0.26], motion: [{ bell: 0, win: [0.2, 0.44] }], sweat: sw(2.5, 0.3), strainAt: [[0.08, 0.3]] });
+
+add({ id: "high-pull", name: "High Pull", sub: "Ballistic · Beginner", rep: 2, ...swingBase,
+  armMode: { l: "fkw", r: "blend" }, elbowSign: { r: 1 },
+  defaults: { lfx: -8, rfx: 2, le: 10, re: 0, rhx: 46, rhy: -60 },
+  keys: [
+    [0.00, { ...SW.up, t: 184, rm: 1, rua: 60, lua: -6 }],
+    [0.12, {}],
+    [0.26, { ...SW.fall, rm: 0, rua: 30 }],
+    [0.36, { ...SW.hike, rua: 5 }],
+    [0.50, { ...SW.bot, rua: -34, lua: -40 }],
+    [0.64, { ...SW.snap, rua: 10, lua: -10 }],
+    [0.76, { ...SW.up, rm: 0.6, rua: 50 }],
+    [0.86, { t: 184, rm: 1, lua: -6 }],
+  ],
+  bells: [{ hand: "r" }], effort: [0.64], motion: [{ bell: 0, win: [0.62, 0.84] }], sweat: sw(2, 0.66), strainAt: [[0.56, 0.86]] });
+
+// ---------------- front-view snatch family ----------------
+// side "s" works; keys start in the backswing so hand switches can happen there.
+const SNF = { lfx: -22, rfx: 22, lfa: -70, rfa: 70 };
+function snatchKeys(opt = {}) {
+  const both = opt.both, meet = opt.meet; // meet: free hand comes to the bell at the bottom
+  const R = (x, y, f) => ({ rhx: x, rhy: y, b0f: f });
+  const Lf = (x, y, f) => both ? { lhx: -x, lhy: y, b1f: -f } : {};
+  const free = (k) => both ? {} : k;
+  return [
+    [0.00, { hx: 0, hy: -50, pt: 55, ...SNF, ...R(4, 46, 0), ...Lf(4, 46, 0), ...free(meet ? { lhx: -4, lhy: 46 } : { lhx: -24, lhy: 18 }) }],
+    [0.06, { ...free({ lhx: -24, lhy: 18 }) }],
+    [0.14, { hy: -57.5, pt: 6, ...R(12, -14, 0), ...Lf(12, -14, 0), ...free({ lhx: -30, lhy: 2 }) }],
+    [0.24, { pt: 0, ...R(26, -72, -40), ...Lf(26, -72, -40) }],
+    [0.33, { ...R(35, -125, -145), ...Lf(35, -118, -145) }],
+    [0.40, { ...R(36, -131, -155), ...Lf(36, -131, -155) }],
+    [0.60, {}],
+    [0.70, { ...R(28, -76, -70), ...Lf(28, -76, -70) }],
+    [0.80, { ...R(14, -26, 0), ...Lf(14, -26, 0) }],
+    [0.94, { hy: -50, pt: 55, ...R(4, 46, 0), ...Lf(4, 46, 0), ...free(meet ? { lhx: -4, lhy: 46 } : { lhx: -24, lhy: 18 }) }],
+  ];
+}
+const snatchBase = { view: "front", armMode: { l: "ikb", r: "ikb" }, effort: [0.14], strainAt: [[0.06, 0.24]] };
+add({ id: "snatch", name: "Snatch", sub: "Ballistic · Intermediate", rep: 2.5, ...snatchBase,
+  keys: snatchKeys(), bells: [{ hand: "r" }], motion: [{ bell: 0, win: [0.1, 0.36] }], sweat: sw(2.5, 0.45) });
+
+add({ id: "double-snatch", name: "Double Snatch", sub: "Ballistic · Advanced", rep: 2.5, ...snatchBase,
+  defaults: { lfx: -26, rfx: 26 },
+  keys: snatchKeys({ both: true }).map(([p, o]) => [p, Object.assign({}, o, "rhx" in o ? { rhx: o.rhx + 6, lhx: o.lhx - 6 } : {})]),
+  bells: [{ hand: "r" }, { hand: "l" }], motion: [{ bell: 0, win: [0.1, 0.36] }, { bell: 1, win: [0.1, 0.36] }], sweat: sw(2.5, 0.45) });
+
+{
+  const A = snatchKeys({ meet: true }).map(([p, o]) => [p, Object.assign({}, o, p === 0 ? { b0w: 1 } : {})]);
+  const B = mirror(A);
+  // switch the bell to the other hand while both hands are on it in the backswing
+  A[A.length - 1][1].b0w = 1; B[0][1].b0w = 0;
+  const keys = halves(A, B);
+  keys.splice(keys.length / 2, 0); // keep order
+  add({ id: "alternating-snatch", name: "Alternating Snatch", sub: "Ballistic · Advanced", rep: 5, ...snatchBase,
+    effort: [0.07, 0.57], strainAt: [[0.03, 0.12], [0.53, 0.62]],
+    keys, bells: [{ hand: "swap" }], motion: [{ bell: 0, win: [0.05, 0.18] }, { bell: 0, win: [0.55, 0.68] }], sweat: [7.4, 9.0] });
+}
+
+// ---------------- clean & jerk / long cycle (front view) ----------------
+const FR = (x, y) => ({ rhx: x, rhy: y });
+function cjKeys(both) {
+  const K = (o) => {
+    if (!both) return o;
+    const n = Object.assign({}, o);
+    if ("rhx" in o) { n.lhx = -o.rhx; n.lhy = o.rhy; }
+    if ("b0f" in o) n.b1f = -o.b0f;
+    return n;
+  };
+  const free = (x, y) => both ? {} : { lhx: x, lhy: y };
+  return [
+    [0.00, K({ hx: 0, hy: -50, pt: 55, ...SNF, ...FR(4, 46), b0f: 0, ...free(-24, 18) })],          // backswing
+    [0.08, K({ hy: -57.5, pt: 6, ...FR(12, -14) })],                                                  // hip snap
+    [0.15, K({ pt: 0, ...FR(38, -40), b0f: 140 })],                                                   // land in rack
+    [0.24, {}],
+    [0.31, K({ hy: -50, ...FR(38, -36) })],                                                           // dip
+    [0.37, K({ hy: -59, ...FR(34, -100), b0f: 150 })],                                                // drive
+    [0.42, K({ hy: -50, ...FR(36, -125), b0f: 155 })],                                                // re-dip under lockout
+    [0.52, K({ hy: -57.5 })],                                                                         // stand
+    [0.64, {}],
+    [0.74, K({ hy: -54, ...FR(38, -40), b0f: 140 })],                                                 // back to rack
+    [0.84, {}],
+    [0.90, K({ ...FR(14, -26), b0f: 0, ...free(-24, 18) })],
+  ];
+}
+add({ id: "clean-and-jerk", name: "Clean & Jerk", sub: "Ballistic · Advanced", view: "front", rep: 5,
+  armMode: { l: "ikb", r: "ikb" }, keys: cjKeys(false), bells: [{ hand: "r" }],
+  effort: [0.08, 0.37], strainAt: [[0.03, 0.12], [0.3, 0.45]], motion: [{ bell: 0, win: [0.04, 0.16] }], sweat: [6.9, 8.4] });
+add({ id: "long-cycle", name: "Long Cycle (Double)", sub: "Ballistic · Advanced", view: "front", rep: 5,
+  armMode: { l: "ikb", r: "ikb" }, defaults: { lfx: -26, rfx: 26 }, keys: cjKeys(true), bells: [{ hand: "r" }, { hand: "l" }],
+  effort: [0.08, 0.37], strainAt: [[0.03, 0.12], [0.3, 0.45]], motion: [{ bell: 0, win: [0.04, 0.16] }, { bell: 1, win: [0.04, 0.16] }], sweat: [6.9, 8.4] });
+
+module.exports = L;
+},
+"./ex_push.js": function (module, exports, require) {
+const { sw, mirror, halves } = require("./lib.js");
+const L = [];
+const add = d => (L.push(Object.assign({ cat: "push" }, d)), d);
+
+const FST = { hx: 0, hy: -57.5, t: 180, lfx: -16, rfx: 16, lfy: 0, rfy: 0, lfa: -75, rfa: 75 };
+const RACK = { rhx: 38, rhy: -40, b0f: 140 };
+const LOCK = { rhx: 36, rhy: -131, b0f: 155 };
+const FREE = { lhx: -36, lhy: 2 };
+const press = { view: "front", armMode: { l: "ikb", r: "ikb" }, bells: [{ hand: "r" }] };
+
+add({ id: "strict-press", name: "Strict Press", sub: "Vertical", rep: 2.5, ...press,
+  keys: [
+    [0.00, { ...FST, ...RACK, ...FREE }],
+    [0.12, {}],
+    [0.48, { ...LOCK }],
+    [0.60, {}],
+    [0.94, { ...RACK }],
+  ],
+  effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.15, 0.45]] });
+
+add({ id: "push-press", name: "Push Press", sub: "Vertical", rep: 2.5, ...press,
+  keys: [
+    [0.00, { ...FST, ...RACK, ...FREE }],
+    [0.14, {}],
+    [0.26, { hy: -49 }],                                   // dip
+    [0.34, { hy: -59, rhx: 37, rhy: -96, b0f: 150 }],      // drive
+    [0.42, { hy: -57.5, ...LOCK }],
+    [0.60, {}],
+    [0.90, { ...RACK }],
+  ],
+  effort: [0.33], motion: [{ bell: 0, win: [0.28, 0.42] }], sweat: sw(2.5, 0.36), strainAt: [[0.24, 0.42]] });
+
+add({ id: "push-jerk", name: "Push Jerk", sub: "Power", rep: 2.5, ...press,
+  keys: [
+    [0.00, { ...FST, ...RACK, ...FREE }],
+    [0.14, {}],
+    [0.25, { hy: -49 }],                                   // dip
+    [0.31, { hy: -60, rhx: 37, rhy: -92, b0f: 150 }],      // drive
+    [0.38, { hy: -48, ...LOCK }],                          // drop under, arm locked
+    [0.50, { hy: -57.5 }],                                 // stand up
+    [0.64, {}],
+    [0.90, { ...RACK }],
+  ],
+  effort: [0.31], motion: [{ bell: 0, win: [0.26, 0.38] }], sweat: sw(2.5, 0.33), strainAt: [[0.22, 0.48]] });
+
+add({ id: "thruster", name: "Thruster", sub: "Power", rep: 2.5, ...press,
+  keys: [
+    [0.00, { ...FST, lfx: -24, rfx: 24, lfa: -65, rfa: 65, ...RACK, ...FREE, pt: 0 }],
+    [0.08, {}],
+    [0.38, { hy: -30, pt: 22, lhx: -40, lhy: -6 }],
+    [0.44, {}],
+    [0.62, { hy: -57.5, pt: 0, rhx: 37, rhy: -96, b0f: 150, ...FREE }],
+    [0.70, { ...LOCK }],
+    [0.78, {}],
+    [0.96, { ...RACK }],
+  ],
+  effort: [0.56], motion: [{ bell: 0, win: [0.5, 0.7] }], sweat: sw(2.5, 0.6), strainAt: [[0.4, 0.7]] });
+
+// half-kneeling: legs drawn in profile (left knee down, right foot forward) so the stance reads clearly
+add({ id: "half-kneeling-press", name: "Half-Kneeling Press", sub: "Vertical", rep: 2.5, ...press,
+  legMode: { l: "fkw", r: "fkw" },
+  defaults: { lth: 0, lk: -90, lfa: -150, lff: 0.7, rth: 90, rk: 90, rfa: 90 },
+  keys: [
+    [0.00, { hx: 0, hy: -30, t: 180, lhx: -38, lhy: -16, rhx: -38, rhy: -40, b0f: -140 }],
+    [0.12, {}],
+    [0.48, { lhx: -36, lhy: -131, b0f: -155 }],
+    [0.60, {}],
+    [0.94, { lhx: -38, lhy: -40, b0f: -140 }],
+  ].map(([p, o]) => { const n = Object.assign({}, o); if (p === 0) { n.lhx = -38; n.lhy = -40; n.rhx = 44; n.rhy = -12; } return [p, n]; }),
+  bells: [{ hand: "l" }], effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.15, 0.45]],
+  shadow: { x: 0, rx: 64 } });
+
+add({ id: "z-press", name: "Z Press", sub: "Vertical", rep: 2.5, ...press,
+  defaults: { lfx: -74, rfx: 74, lfy: -4, rfy: -4, lfa: -165, rfa: 165 },
+  keys: [
+    [0.00, { hx: 0, hy: -13, t: 180, ...RACK, lhx: -46, lhy: 4 }],
+    [0.12, {}],
+    [0.48, { ...LOCK }],
+    [0.60, {}],
+    [0.94, { ...RACK }],
+  ],
+  effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.15, 0.48]], shadow: { x: 0, rx: 90 } });
+
+add({ id: "bottoms-up-press", name: "Bottoms-Up Press", sub: "Vertical", rep: 2.5, ...press,
+  keys: [
+    [0.00, { ...FST, rhx: 44, rhy: -42, b0a: 180, ...FREE }],
+    [0.12, {}],
+    [0.50, { rhx: 38, rhy: -131 }],
+    [0.62, {}],
+    [0.94, { rhx: 44, rhy: -42 }],
+  ],
+  effort: [0.32], sweat: sw(2.5, 0.35), strainAt: [[0.0, 1.0]] });
+
+// clean & press (front view)
+add({ id: "clean-and-press", name: "Clean & Press", sub: "Power", rep: 5, ...press,
+  keys: [
+    [0.00, { hx: 0, hy: -50, pt: 55, lfx: -22, rfx: 22, lfy: 0, rfy: 0, lfa: -70, rfa: 70, rhx: 4, rhy: 46, b0f: 0, lhx: -24, lhy: 18 }],
+    [0.08, { hy: -57.5, pt: 6, rhx: 12, rhy: -14, lhx: -36, lhy: 2 }],
+    [0.15, { pt: 0, ...RACK }],
+    [0.24, {}],
+    [0.44, { ...LOCK }],
+    [0.54, {}],
+    [0.70, { ...RACK }],
+    [0.80, {}],
+    [0.88, { rhx: 14, rhy: -26, b0f: 0, lhx: -24, lhy: 18 }],
+  ],
+  effort: [0.08, 0.32], strainAt: [[0.03, 0.12], [0.26, 0.46]], motion: [{ bell: 0, win: [0.04, 0.16] }], sweat: [7.2, 8.9] });
+
+// ---------------- bodyweight / horizontal (side view) ----------------
+const prone = {
+  headComp: -1.05, headClamp: 90, headPos: { x: -20, y: -90 }, armMode: { l: "ik", r: "ik" },
+  shOff: { l: { x: 26, y: -58 }, r: { x: 32, y: -58 } }, hipOff: { l: { x: 20, y: -4 }, r: { x: 26, y: -4 } },
+  kneeSign: { l: -1, r: -1 },
+};
+const pushKeys = (top, bot) => [
+  [0.00, top], [0.12, {}], [0.50, bot], [0.58, {}], [0.90, top],
+];
+add({ id: "push-up", name: "Push-up", sub: "Horizontal", rep: 2.5, ...prone,
+  defaults: { lfx: -66, rfx: -62, lfy: -7, rfy: -7, lfa: 15, rfa: 15, lhx: 62, rhx: 66, lhy: 0, rhy: 0 },
+  keys: pushKeys({ hx: 0, hy: -74, t: 98 }, { hx: 2, hy: -56, t: 91 }),
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.45, 0.8]] });
+
+add({ id: "deficit-push-up", name: "Deficit Push-up", sub: "Horizontal", rep: 2.5, ...prone,
+  props: [{ type: "block", x: 66, w: 26, h: 13 }],
+  defaults: { lfx: -66, rfx: -62, lfy: -7, rfy: -7, lfa: 15, rfa: 15, lhx: 62, rhx: 66, lhy: -13, rhy: -13 },
+  keys: pushKeys({ hx: 0, hy: -82, t: 103 }, { hx: 3, hy: -56, t: 93 }),
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.45, 0.8]] });
+
+add({ id: "close-grip-push-up", name: "Close-Grip Push-up", sub: "Horizontal", rep: 2.5, ...prone,
+  shOff: { l: { x: 26, y: -50 }, r: { x: 32, y: -50 } },
+  defaults: { lfx: -66, rfx: -62, lfy: -7, rfy: -7, lfa: 15, rfa: 15, lhx: 44, rhx: 48, lhy: 0, rhy: 0 },
+  keys: pushKeys({ hx: 0, hy: -74, t: 98 }, { hx: 2, hy: -56, t: 91 }),
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.45, 0.8]] });
+
+add({ id: "ring-push-up", name: "Ring Push-up", sub: "Horizontal", rep: 2.5, ...prone,
+  props: [P => ({ type: "ring", x: P.arms.l.H.x, y: P.arms.l.H.y, ax: 60, ay: -300 }), P => ({ type: "ring", x: P.arms.r.H.x, y: P.arms.r.H.y, ax: 66, ay: -300 })],
+  defaults: { lfx: -66, rfx: -62, lfy: -7, rfy: -7, lfa: 15, rfa: 15 },
+  keys: [
+    [0.00, { hx: 0, hy: -84, t: 102, lhx: 62, rhx: 66, lhy: -16, rhy: -16 }],
+    [0.12, {}],
+    [0.50, { hx: 2, hy: -62, t: 94, lhx: 60, rhx: 64, lhy: -15, rhy: -15 }],
+    [0.58, {}],
+    [0.90, { hx: 0, hy: -84, t: 102, lhx: 62, rhx: 66, lhy: -16, rhy: -16 }],
+  ],
+  fitExtra: [[60, -170]],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.45, 0.8]] });
+
+add({ id: "dips", name: "Dips", sub: "Vertical", view: "front", rep: 2.5,
+  armMode: { l: "ik", r: "ik" }, legMode: { l: "fkw", r: "fkw" }, elbowSign: { l: -1, r: 1 },
+  props: [{ type: "post", x: -50, y: -112 }, { type: "post", x: 50, y: -112 }],
+  defaults: { lhx: -50, lhy: -114, rhx: 50, rhy: -114, lth: 6, rth: 6, lk: 0, rk: 0, lsf: 0.45, rsf: 0.45, lfa: -20, rfa: 20, lff: 0.8, rff: 0.8 },
+  keys: [
+    [0.00, { hx: 0, hy: -110, t: 180 }],
+    [0.10, {}],
+    [0.48, { hy: -76, pt: 18 }],
+    [0.56, {}],
+    [0.92, { hy: -110, pt: 0 }],
+  ],
+  shadow: { x: 0, rx: 60 }, effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.48, 0.8]] });
+
+// floor press: supine, head on the left
+add({ id: "floor-press", name: "Floor Press", sub: "Horizontal", rep: 2.5,
+  headComp: -1.05, headClamp: 180, armMode: { l: "ik", r: "ik" }, elbowSign: { l: 1, r: 1 },
+  hipOff: { l: { x: -30, y: 0 }, r: { x: -26, y: 0 } }, shOff: { l: { x: -26, y: -46 }, r: { x: -20, y: -46 } },
+  bells: [{ hand: "r" }],
+  defaults: { hx: 30, hy: -52, t: 270, lfx: 70, rfx: 76, lfy: 0, rfy: 0, b0a: -25 },
+  keys: [
+    [0.00, { lhx: -10, lhy: -4, rhx: -16, rhy: -82 }],
+    [0.12, {}],
+    [0.50, { rhx: -4, rhy: -44 }],
+    [0.58, {}],
+    [0.92, { rhx: -16, rhy: -82 }],
+  ],
+  shadow: { x: 10, rx: 110 }, effort: [0.7], sweat: sw(2.5, 0.74), strainAt: [[0.55, 0.85]] });
+
+module.exports = L;
+},
+"./ex_pull.js": function (module, exports, require) {
+const { sw, mirror, halves } = require("./lib.js");
+const L = [];
+const add = d => (L.push(Object.assign({ cat: "pull" }, d)), d);
+
+// ---------------- bodyweight (front view) ----------------
+const hang = (grip, barY, extra = {}) => ({
+  view: "front", rep: 2.5, armMode: { l: "ik", r: "ik" }, legMode: { l: "fkw", r: "fkw" },
+  defaults: Object.assign({ lhx: -grip, rhx: grip, lhy: barY, rhy: barY, lth: 4, rth: 4, lk: 0, rk: 0, lfa: -30, rfa: 30 }, extra.defaults || {}),
+  shadow: { x: 0, rx: 46 }, effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.12, 0.5]],
+});
+function hangKeys(barY, grip) {
+  const reach = Math.sqrt(67 * 67 - Math.pow(Math.max(0, grip - 31), 2));
+  const low = barY + reach + 66 - 1, high = barY + 76;
+  return [
+    [0.00, { hx: 0, hy: low, lsf: 1, rsf: 1 }],
+    [0.10, {}],
+    [0.42, { hy: high, lsf: 0.8, rsf: 0.8 }],
+    [0.56, {}],
+    [0.92, { hy: low, lsf: 1, rsf: 1 }],
+  ];
+}
+add({ id: "pull-up", name: "Pull-up", sub: "Bodyweight", ...hang(48, -200),
+  props: [{ type: "barFront", x1: -92, x2: 92, y: -200 }], keys: hangKeys(-200, 48) });
+add({ id: "chin-up", name: "Chin-up", sub: "Bodyweight", ...hang(26, -200),
+  props: [{ type: "barFront", x1: -92, x2: 92, y: -200 }], keys: hangKeys(-200, 26) });
+add({ id: "neutral-grip-pull-up", name: "Neutral-Grip Pull-up", sub: "Bodyweight", ...hang(22, -186),
+  props: [{ type: "barFront", x1: -92, x2: 92, y: -200 }, { type: "handles", x1: -22, x2: 22, y: -200 }], keys: hangKeys(-186, 22) });
+add({ id: "towel-pull-up", name: "Towel Pull-up", sub: "Bodyweight", ...hang(34, -172),
+  props: [{ type: "barFront", x1: -92, x2: 92, y: -204 }, { type: "towel", x: -34, y: -204, len: 40 }, { type: "towel", x: 34, y: -204, len: 40 }],
+  keys: hangKeys(-172, 34) });
+
+// inverted row: side view, supine under a bar (head on the left)
+add({ id: "inverted-row", name: "Inverted Row", sub: "Bodyweight", rep: 2.5,
+  headComp: -1.05, headClamp: 180, armMode: { l: "ik", r: "ik" }, elbowSign: { l: 1, r: 1 },
+  hipOff: { l: { x: -30, y: 0 }, r: { x: -26, y: 0 } }, shOff: { l: { x: 20, y: -56 }, r: { x: 26, y: -56 } },
+  props: [{ type: "barSide", x: -14, y: -138, post: -40 }],
+  defaults: { lfx: 92, rfx: 96, lfy: -3, rfy: -3, lfa: 165, rfa: 165, lhx: -14, rhx: -12, lhy: -138, rhy: -138 },
+  keys: [
+    [0.00, { hx: 40, hy: -48, t: 256 }],
+    [0.10, {}],
+    [0.44, { hx: 36, hy: -74, t: 262 }],
+    [0.56, {}],
+    [0.92, { hx: 40, hy: -48, t: 256 }],
+  ],
+  shadow: { x: 30, rx: 100 }, effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.15, 0.55]] });
+
+// ---------------- kettlebell rows (side view) ----------------
+const ROWT = { hx: -30, hy: -56, t: 118, lfx: -16, rfx: 8, lfy: 0, rfy: 0 };
+add({ id: "gorilla-row", name: "Gorilla Row", sub: "Kettlebell", rep: 5,
+  armMode: { l: "ik", r: "ik" }, elbowSign: { l: 1, r: 1 },
+  bells: [{ hand: "l", z: 2.9 }, { hand: "r" }], defaults: { b0a: 0, b1a: 0 },
+  keys: [
+    [0.00, { ...ROWT, lhx: 20, lhy: -27.5, rhx: 28, rhy: -27.5 }],
+    [0.08, {}],
+    [0.22, { rhx: 6, rhy: -66, t: 120 }],
+    [0.30, {}],
+    [0.44, { rhx: 28, rhy: -27.5, t: 118 }],
+    [0.58, {}],
+    [0.72, { lhx: 0, lhy: -66, t: 120 }],
+    [0.80, {}],
+    [0.94, { lhx: 20, lhy: -27.5, t: 118 }],
+  ],
+  effort: [0.2, 0.7], sweat: [6.9, 8.8], strainAt: [[0.14, 0.34], [0.64, 0.84]] });
+
+add({ id: "single-arm-row", name: "Single-Arm Row", sub: "Kettlebell", rep: 2.5,
+  armMode: { l: "ik", r: "ik" }, elbowSign: { l: -1, r: 1 },
+  bells: [{ hand: "r" }], defaults: { b0a: 0 },
+  keys: [
+    [0.00, { hx: -26, hy: -54, t: 120, lfx: -30, rfx: 14, lfy: 0, rfy: 0, lhx: 26, lhy: -40, rhx: 26, rhy: -30 }],
+    [0.10, {}],
+    [0.42, { rhx: 4, rhy: -66 }],
+    [0.54, {}],
+    [0.90, { rhx: 26, rhy: -30 }],
+  ],
+  effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.2, 0.55]] });
+
+add({ id: "three-point-row", name: "Three-Point Row", sub: "Kettlebell", rep: 2.5,
+  armMode: { l: "ik", r: "ik" }, elbowSign: { l: -1, r: 1 },
+  props: [{ type: "bench", x: 46, y: -42, w: 62 }],
+  bells: [{ hand: "r" }], defaults: { b0a: 0 },
+  keys: [
+    [0.00, { hx: -24, hy: -56, t: 112, lfx: -22, rfx: 4, lfy: 0, rfy: 0, lhx: 60, lhy: -43, rhx: 30, rhy: -30 }],
+    [0.10, {}],
+    [0.42, { rhx: 6, rhy: -68 }],
+    [0.54, {}],
+    [0.90, { rhx: 30, rhy: -30 }],
+  ],
+  effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.2, 0.55]] });
+
+add({ id: "renegade-row", name: "Renegade Row", sub: "Kettlebell", rep: 5,
+  headComp: -1.05, headClamp: 90, headPos: { x: -20, y: -90 }, armMode: { l: "ik", r: "ik" }, elbowSign: { l: -1, r: 1 },
+  shOff: { l: { x: 26, y: -58 }, r: { x: 32, y: -58 } }, hipOff: { l: { x: 20, y: -4 }, r: { x: 26, y: -4 } }, kneeSign: { l: -1, r: -1 },
+  bells: [{ hand: "l", z: 2.9 }, { hand: "r" }],
+  defaults: { lfx: -74, rfx: -62, lfy: -7, rfy: -7, lfa: 15, rfa: 15, b0a: 0, b1a: 0 },
+  keys: [
+    [0.00, { hx: 0, hy: -96, t: 104, lhx: 60, lhy: -27.5, rhx: 64, rhy: -27.5 }],
+    [0.10, {}],
+    [0.24, { rhx: 38, rhy: -66, t: 102 }],
+    [0.32, {}],
+    [0.46, { rhx: 64, rhy: -27.5, t: 104 }],
+    [0.60, {}],
+    [0.74, { lhx: 34, lhy: -66, t: 106 }],
+    [0.82, {}],
+    [0.96, { lhx: 60, lhy: -27.5, t: 104 }],
+  ],
+  effort: [0.22, 0.72], sweat: [6.9, 8.8], strainAt: [[0.0, 1.0]] });
+
+add({ id: "ballistic-row", name: "Ballistic Row", sub: "Kettlebell", rep: 2,
+  armMode: { l: "fkw", r: "ik" }, elbowSign: { r: 1 },
+  bells: [{ hand: "r" }],
+  keys: [
+    [0.00, { hx: -24, hy: -54, t: 122, lfx: -14, rfx: 6, lfy: 0, rfy: 0, rhx: 6, rhy: -70, lua: -10, le: 30 }],
+    [0.12, {}],
+    [0.30, { rhx: 26, rhy: -28 }],
+    [0.46, { rhx: -6, rhy: -26 }],                 // bell swings back through the legs
+    [0.62, { rhx: 22, rhy: -30 }],
+    [0.74, { rhx: 6, rhy: -70 }],                  // explosive row
+  ],
+  effort: [0.68], motion: [{ bell: 0, win: [0.62, 0.8] }], sweat: sw(2, 0.7), strainAt: [[0.62, 0.95]] });
+
+add({ id: "dead-clean-pull", name: "Dead Clean Pull", sub: "Kettlebell", rep: 2.5,
+  armMode: { l: "fkw", r: "blend" }, elbowSign: { r: 1 },
+  defaults: { lfx: -10, rfx: 2, le: 10, re: 0, rhx: 46, rhy: -60 },
+  keys: [
+    [0.00, { hx: -38, hy: -45, t: 140, rm: 0, rua: -2, lua: -20 }],
+    [0.10, {}],
+    [0.26, { hx: -4, hy: -55, t: 166, rua: 12, lua: -8 }],
+    [0.38, { hx: 0, hy: -57.5, t: 182, rm: 1, rua: 50, lua: -6 }],
+    [0.50, {}],
+    [0.64, { t: 178, rm: 0, rua: 20 }],
+    [0.92, { hx: -38, hy: -45, t: 140, rua: -2, lua: -20 }],
+  ],
+  bells: [{ hand: "r" }], effort: [0.26], motion: [{ bell: 0, win: [0.2, 0.42] }], sweat: sw(2.5, 0.3), strainAt: [[0.08, 0.36]] });
+
+module.exports = L;
+},
+"./ex_core.js": function (module, exports, require) {
+const { sw, mirror, halves, stepLegs } = require("./lib.js");
+const L = [];
+const add = d => (L.push(Object.assign({ cat: "core" }, d)), d);
+const S = Math.sin, C = Math.cos, PI = Math.PI;
+
+// ================= CARRIES & MARCHES (front view, stepping in place) =================
+const walker = (high) => ({
+  view: "front", rep: high ? 2.5 : 1.25, legMode: { l: "fkw", r: "fkw" }, armMode: { l: "ikb", r: "ikb" },
+  flex: { l: 1, r: 1 }, shadow: { x: 0, rx: 52 }, scroll: high ? 0 : 80,
+});
+const RACK = { rhx: 38, rhy: -40, b0f: 140 }, RACKL = { lhx: -38, lhy: -40, b1f: -140 };
+const LOCK = { rhx: 36, rhy: -131, b0f: 155 };
+const freeSwing = (c, p, amt) => { c.lhx = -42 + amt * S(2 * PI * p); c.lhy = -6 - Math.abs(amt * 0.4 * S(2 * PI * p)); };
+
+add({ id: "suitcase-carry", name: "Suitcase Carry", sub: "Carries", ...walker(false),
+  bells: [{ hand: "r" }], keys: [[0, { hy: -57.5, t: 180, rhx: 48, rhy: -2, b0a: 0 }]],
+  post(c, p) { stepLegs(c, p); freeSwing(c, p, 6); c.t = 180 + 0.6 * S(2 * PI * p); },
+  effort: [0.25, 0.75], sweat: [6.4, 8.9] });
+add({ id: "front-rack-carry", name: "Front Rack Carry", sub: "Carries", ...walker(false),
+  bells: [{ hand: "r" }], keys: [[0, { hy: -57.5, t: 180, ...RACK }]],
+  post(c, p) { stepLegs(c, p); freeSwing(c, p, 6); },
+  effort: [0.25, 0.75], sweat: [6.4, 8.9] });
+add({ id: "waiters-carry", name: "Waiter's Carry", sub: "Carries", ...walker(false),
+  bells: [{ hand: "r" }], keys: [[0, { hy: -57.5, t: 180, rhx: 36, rhy: -131, b0a: 180 }]],
+  post(c, p) { stepLegs(c, p); freeSwing(c, p, 6); },
+  effort: [0.25, 0.75], sweat: [6.4, 8.9], strainAt: [[0, 1]] });
+add({ id: "overhead-carry", name: "Overhead Carry", sub: "Carries", ...walker(false),
+  bells: [{ hand: "r" }], keys: [[0, { hy: -57.5, t: 180, ...LOCK }]],
+  post(c, p) { stepLegs(c, p); freeSwing(c, p, 6); },
+  effort: [0.25, 0.75], sweat: [6.4, 8.9] });
+
+add({ id: "offset-march", name: "Offset March", sub: "Marches", ...walker(true),
+  bells: [{ hand: "r" }], keys: [[0, { hy: -57.5, t: 180, ...RACK }]],
+  post(c, p) { stepLegs(c, p, { high: true }); freeSwing(c, p, 4); },
+  effort: [0.25, 0.75], sweat: [6.6, 8.9] });
+add({ id: "front-rack-march", name: "Front Rack March", sub: "Marches", ...walker(true),
+  bells: [{ hand: "r" }, { hand: "l" }], keys: [[0, { hy: -57.5, t: 180, ...RACK, ...RACKL }]],
+  post(c, p) { stepLegs(c, p, { high: true }); },
+  effort: [0.25, 0.75], sweat: [6.6, 8.9] });
+add({ id: "overhead-march", name: "Overhead March", sub: "Marches", ...walker(true),
+  bells: [{ hand: "r" }], keys: [[0, { hy: -57.5, t: 180, ...LOCK }]],
+  post(c, p) { stepLegs(c, p, { high: true }); freeSwing(c, p, 4); },
+  effort: [0.25, 0.75], sweat: [6.6, 8.9], strainAt: [[0, 1]] });
+
+// ================= STATIC =================
+add({ id: "plank", name: "Plank", sub: "Static", rep: 5,
+  headComp: -1.05, headClamp: 90, headPos: { x: -20, y: -90 }, armMode: { l: "ik", r: "ik" }, elbowSign: { l: 1, r: 1 },
+  shOff: { l: { x: 30, y: -58 }, r: { x: 36, y: -58 } }, hipOff: { l: { x: 20, y: -4 }, r: { x: 26, y: -4 } }, kneeSign: { l: -1, r: -1 },
+  defaults: { lfx: -66, rfx: -62, lfy: -7, rfy: -7, lfa: 15, rfa: 15, lhx: 86, rhx: 90, lhy: -3, rhy: -3 },
+  keys: [[0.00, { hx: 0, hy: -66, t: 91 }], [0.50, { hx: 0, hy: -67.5, t: 92 }]],
+  effort: [0.5], sweat: [4.2, 8.2], strainAt: [[0, 1]] });
+
+add({ id: "side-plank", name: "Side Plank", sub: "Static", view: "front", rep: 5,
+  headComp: -0.9, headClamp: 90, armMode: { l: "ik", r: "fkw" }, elbowSign: { l: 1 },
+  bells: [],
+  defaults: { lfx: 70, rfx: 74, lfy: -3, rfy: -3, lfa: 160, rfa: 160, rua: 180, re: 0 },
+  keys: [[0.00, { hx: 4, hy: -46, t: 238, lhx: -40, lhy: -2 }], [0.50, { hx: 4, hy: -48, t: 239, lhx: -40, lhy: -2 }]],
+  post(c) { // keep the support elbow under the shoulder: forearm flat on floor
+  },
+  effort: [0.5], sweat: [4.2, 8.2], strainAt: [[0, 1]], shadow: { x: 10, rx: 100 } });
+
+const supine = {
+  headComp: -1.05, headClamp: 180,
+  hipOff: { l: { x: -26, y: 10 }, r: { x: -22, y: 10 } }, shOff: { l: { x: -22, y: -48 }, r: { x: -16, y: -48 } },
+};
+add({ id: "hollow-hold", name: "Hollow Hold", sub: "Static", rep: 5, ...supine,
+  legMode: { l: "fk", r: "fk" }, armMode: { l: "fk", r: "fk" },
+  defaults: { lua: 46, rua: 46, le: 0, re: 0, lk: 0, rk: 0, lfa: 70, rfa: 70 },
+  keys: [[0.00, { hx: 26, hy: -54, t: 262, lth: 28, rth: 28 }], [0.50, { hx: 26, hy: -55, t: 263, lth: 26, rth: 26 }]],
+  effort: [0.5], sweat: [4.2, 8.2], strainAt: [[0, 1]], shadow: { x: 0, rx: 110 } });
+
+// ================= DYNAMIC =================
+// hanging raises: torso faces you, legs drawn in profile so the lift reads clearly
+const hangRaise = (keys) => ({
+  view: "front", rep: 2.5, armMode: { l: "ik", r: "ik" }, legMode: { l: "fkw", r: "fkw" }, flex: { l: 1, r: 1 },
+  props: [{ type: "barFront", x1: -92, x2: 92, y: -200 }],
+  defaults: { lhx: -46, rhx: 46, lhy: -200, rhy: -200, hy: -80, lfa: 90, rfa: 90 },
+  keys, shadow: { x: 0, rx: 46 }, effort: [0.42], sweat: sw(2.5, 0.45), strainAt: [[0.3, 0.6]],
+});
+add({ id: "hanging-knee-raise", name: "Hanging Knee Raise", sub: "Dynamic", ...hangRaise([
+  [0.00, { lth: 2, rth: 2, lk: 4, rk: 4 }],
+  [0.10, {}],
+  [0.42, { lth: 104, rth: 104, lk: 112, rk: 112, hy: -84 }],
+  [0.56, {}],
+  [0.92, { lth: 2, rth: 2, lk: 4, rk: 4, hy: -80 }],
+]) });
+add({ id: "hanging-leg-raise", name: "Hanging Leg Raise", sub: "Dynamic", ...hangRaise([
+  [0.00, { lth: 2, rth: 2, lk: 2, rk: 2 }],
+  [0.10, {}],
+  [0.44, { lth: 92, rth: 92, lk: 4, rk: 4, hy: -84 }],
+  [0.56, {}],
+  [0.92, { lth: 2, rth: 2, lk: 2, rk: 2, hy: -80 }],
+]) });
+
+const bugA = [
+  [0.00, { lua: 90, rua: 90, lth: 84, rth: 84, lk: 88, rk: 88 }],
+  [0.10, {}],
+  [0.40, { rua: 166, lth: 16, lk: 4 }],
+  [0.56, {}],
+  [0.86, { rua: 90, lth: 84, lk: 88 }],
+];
+add({ id: "dead-bug", name: "Dead Bug", sub: "Dynamic", rep: 5, ...supine,
+  legMode: { l: "fk", r: "fk" }, armMode: { l: "fk", r: "fk" }, z: { legl: 1, legr: 7, arml: 3, armr: 8, body: 5 },
+  defaults: { hx: 26, hy: -52, t: 270, le: 0, re: 0, lfa: 90, rfa: 90 },
+  keys: halves(bugA, bugA.map(([p, o]) => {
+    const n = {}; for (const k in o) n[k.replace(/^l/, "#").replace(/^r/, "l").replace(/^#/, "r")] = o[k]; return [p, n];
+  })),
+  effort: [0.2, 0.7], sweat: [6.8, 9.0], strainAt: [[0.15, 0.32], [0.65, 0.82]], shadow: { x: 0, rx: 110 } });
+
+const dogA = [
+  [0.00, { rth: 90, rk: 90, lth: 90, lk: 90, lhx: 58, lhy: -1, rhx: 62, rhy: -1 }],
+  [0.10, {}],
+  [0.40, { rth: 4, rk: 2, lhx: 118, lhy: -66 }],
+  [0.56, {}],
+  [0.86, { rth: 90, rk: 90, lhx: 58, lhy: -1 }],
+];
+add({ id: "bird-dog", name: "Bird Dog", sub: "Dynamic", rep: 5,
+  headComp: -1.05, headClamp: 90, headPos: { x: -18, y: -92 }, armMode: { l: "ik", r: "ik" }, legMode: { l: "fk", r: "fk" },
+  elbowSign: { l: 1, r: 1 }, z: { arml: 7.5, armr: 8, legl: 1, legr: 2, body: 5, head: 6 },
+  shOff: { l: { x: 2, y: -58 }, r: { x: 8, y: -58 } }, hipOff: { l: { x: 30, y: -4 }, r: { x: 34, y: -4 } },
+  defaults: { hx: 0, hy: -62, t: 90, lfa: -100, rfa: -100 },
+  keys: halves(dogA, dogA.map(([p, o]) => {
+    const n = {}; for (const k in o) n[k.replace(/^l/, "#").replace(/^r/, "l").replace(/^#/, "r")] = o[k]; return [p, n];
+  })),
+  effort: [0.2, 0.7], sweat: [6.8, 9.0], strainAt: [[0.15, 0.32], [0.65, 0.82]] });
+
+// ================= ROTATIONAL / ANTI-ROTATION (front view) =================
+const FST = { hx: 0, hy: -57.5, t: 180, lfx: -18, rfx: 18, lfy: 0, rfy: 0, lfa: -75, rfa: 75 };
+const front2 = { view: "front", armMode: { l: "ikb", r: "ikb" } };
+
+add({ id: "halo", name: "Halo", sub: "Rotational", rep: 2.5, ...front2, bells: [{ hand: "mid" }],
+  elbowSign: { l: 1, r: -1 },
+  keys: [[0, { ...FST }]],
+  post(c, p) {
+    const th = 2 * PI * p; // 0 = in front of chin, goes around to the right
+    const x = 44 * S(th), y = -66 - 30 * (1 - C(th)) / 2 - 8 * Math.abs(S(th));
+    c.lhx = x - 4; c.rhx = x + 4; c.lhy = y; c.rhy = y; c.b0a = 180;
+    const front = C(th) > -0.25;
+    c.b0z = front ? 9 : 3.5; c.zl = front ? 8 : 3.4; c.zr = front ? 8 : 3.4;
+  },
+  effort: [0.5], sweat: sw(2.5, 0.55) });
+
+add({ id: "around-the-world", name: "Around the World", sub: "Rotational", rep: 2.5, ...front2, bells: [{ hand: "swap" }],
+  keys: [[0, { ...FST }]],
+  post(c, p) {
+    const th = 2 * PI * p; // 0 front, PI/2 right, PI behind, 3PI/2 left
+    const bx = 58 * S(th), by = -26 - 6 * C(th);
+    // right hand carries front->right->back, left hand carries back->left->front
+    const rIn = p < 0.5, k = rIn ? 1 : 0;
+    const mir = { x: -bx, y: by };
+    c.rhx = rIn ? bx + 3 : mir.x + 3; c.rhy = rIn ? by : mir.y;
+    c.lhx = rIn ? -bx - 3 : bx - 3; c.lhy = by;
+    if (!rIn) { c.lhx = bx - 3; c.lhy = by; c.rhx = -bx + 3; c.rhy = by; }
+    // hand-off blend near front (p~0/1) and back (p~0.5)
+    const d0 = Math.min(p, 1 - p), d1 = Math.abs(p - 0.5);
+    c.b0w = d1 < 0.04 ? 0.5 + (0.5 - p) * 12 : d0 < 0.04 ? (p < 0.5 ? 0.5 + p * 12 : 0.5 - (1 - p) * 12) : k;
+    c.b0w = Math.max(0, Math.min(1, c.b0w));
+    c.b0a = 0;
+    const front = C(th) > -0.2;
+    c.b0z = front ? 9 : 0.5; c.zl = front ? 8 : 0.6; c.zr = front ? 8 : 0.6;
+  },
+  effort: [0.5], sweat: sw(2.5, 0.55) });
+
+// half-kneeling chop: profile legs (left knee down), bell by the horns
+add({ id: "half-kneeling-chop", name: "Half-Kneeling Chop", sub: "Rotational", rep: 2.5, ...front2, legMode: { l: "fkw", r: "fkw" },
+  bells: [{ hand: "mid" }],
+  defaults: { lth: 0, lk: -90, lfa: -150, lff: 0.7, rth: 90, rk: 90, rfa: 90, b0a: 180 },
+  keys: [
+    [0.00, { hx: 0, hy: -30, t: 182, lhx: 40, lhy: -112, rhx: 48, rhy: -112 }],
+    [0.12, {}],
+    [0.46, { t: 172, lhx: -52, lhy: 8, rhx: -44, rhy: 8 }],
+    [0.58, {}],
+    [0.92, { t: 182, lhx: 40, lhy: -112, rhx: 48, rhy: -112 }],
+  ],
+  motion: [{ bell: 0, win: [0.16, 0.46] }], effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.2, 0.5]], shadow: { x: 0, rx: 64 } });
+
+add({ id: "uppercut", name: "Uppercut", sub: "Rotational", rep: 2, ...front2, bells: [{ hand: "r" }],
+  elbowSign: { r: 1 },
+  keys: [
+    [0.00, { ...FST, t: 176, rhx: -22, rhy: -2, lhx: -40, lhy: -50, b0a: 180, rfa: 40 }],
+    [0.14, {}],
+    [0.40, { t: 186, rhx: 40, rhy: -84, rfa: 75 }],
+    [0.52, {}],
+    [0.88, { t: 176, rhx: -22, rhy: -2, rfa: 40 }],
+  ],
+  motion: [{ bell: 0, win: [0.16, 0.42] }], effort: [0.3], sweat: sw(2, 0.35), strainAt: [[0.16, 0.45]] });
+
+add({ id: "figure-8-to-hold", name: "Figure-8 to Hold", sub: "Rotational", rep: 5, ...front2, bells: [{ hand: "swap" }],
+  defaults: { lfx: -24, rfx: 24, lfy: 0, rfy: 0, lfa: -70, rfa: 70 },
+  keys: [
+    [0.00, { hx: 0, hy: -57.5, t: 180, pt: 0, lhx: -4, lhy: -30, rhx: 4, rhy: -30, b0a: 180, b0w: 0.5, b0z: 9, zl: 7, zr: 7 }],
+    [0.10, {}],
+    [0.18, { hy: -52, pt: 45, rhx: 44, rhy: 30, lhx: -30, lhy: 10, b0a: 0, b0w: 1 }],                 // outside right leg
+    [0.28, { rhx: 2, rhy: 44, lhx: -2, lhy: 44, b0w: 0.5, b0z: 0.5, zl: 0.6, zr: 0.6 }],              // between legs, hand-off
+    [0.38, { lhx: -44, lhy: 30, rhx: 30, rhy: 10, b0w: 0, b0z: 9, zl: 7, zr: 7 }],                    // around left leg
+    [0.48, { lhx: -2, lhy: 44, rhx: 2, rhy: 44, b0w: 0.5, b0z: 0.5, zl: 0.6, zr: 0.6 }],              // back through
+    [0.58, { rhx: 44, rhy: 30, lhx: -30, lhy: 10, b0w: 1, b0z: 9, zl: 7, zr: 7 }],
+    [0.68, { hy: -57.5, pt: 0, lhx: -4, lhy: -30, rhx: 4, rhy: -30, b0a: 180, b0w: 0.5 }],          // pop up to the hold
+  ],
+  effort: [0.66], motion: [{ bell: 0, win: [0.6, 0.7] }], sweat: [7.6, 8.9] });
+
+const rotCleanR = [
+  [0.00, { ...FST, lfx: -22, rfx: 22, t: 180, pt: 0, rhx: 38, rhy: -40, b0f: 140, lhx: -40, lhy: -6 }],
+  [0.14, {}],
+  [0.36, { hy: -50, pt: 45, t: 194, rhx: -30, rhy: 40, b0f: 0, lhx: -42, lhy: 0 }],      // bell back outside the left knee
+  [0.52, { hy: -57.5, pt: 6, t: 182, rhx: 10, rhy: -20 }],                                // rotate and snap
+  [0.62, { pt: 0, t: 180, rhx: 38, rhy: -40, b0f: 140, lhx: -40, lhy: -6 }],
+];
+add({ id: "rotational-clean", name: "Rotational Clean", sub: "Rotational", rep: 2.5, ...front2, bells: [{ hand: "r" }],
+  keys: rotCleanR, effort: [0.5], motion: [{ bell: 0, win: [0.44, 0.62] }], sweat: sw(2.5, 0.55), strainAt: [[0.4, 0.6]] });
+
+const rotDL = [
+  [0.00, { ...FST, lfx: -24, rfx: 24, t: 180, pt: 0, lhx: -4, lhy: -4, rhx: 4, rhy: -4, b0a: 0 }],
+  [0.10, {}],
+  [0.42, { hy: -46, pt: 42, t: 164, hx: 8, lhx: 32, lhy: 58, rhx: 40, rhy: 58 }],      // reach to the bell outside the right foot
+  [0.54, {}],
+  [0.86, { hy: -57.5, pt: 0, t: 180, hx: 0, lhx: -4, lhy: -4, rhx: 4, rhy: -4 }],
+];
+add({ id: "rotational-deadlift", name: "Rotational Deadlift", sub: "Rotational", rep: 5, ...front2, bells: [{ hand: "mid" }],
+  keys: halves(rotDL, mirror(rotDL)), effort: [0.35, 0.85], sweat: [7.2, 9.0], strainAt: [[0.27, 0.42], [0.77, 0.92]] });
+
+add({ id: "windmill", name: "Windmill", sub: "Rotational", view: "front", rep: 10 / 3,
+  armMode: { l: "ik", r: "fkw" }, bells: [{ hand: "r" }], headComp: -0.6,
+  defaults: { lfx: -26, rfx: 20, lfy: 0, rfy: 0, lfa: -80, rfa: -40, rua: 172, re: 0, b0f: 155 },
+  keys: [
+    [0.00, { hx: 0, hy: -57.5, t: 180, lhx: -36, lhy: -60 }],
+    [0.10, {}],
+    [0.48, { hx: 16, hy: -54, t: 246, pt: 10, lhx: -32, lhy: -4 }],
+    [0.58, {}],
+    [0.92, { hx: 0, hy: -57.5, t: 180, pt: 0, lhx: -36, lhy: -60 }],
+  ],
+  effort: [0.72], sweat: sw(10 / 3, 0.75), strainAt: [[0.4, 0.8]] });
+
+add({ id: "bent-press", name: "Bent Press", sub: "Rotational · Advanced", view: "front", rep: 5,
+  armMode: { l: "ik", r: "ik" }, bells: [{ hand: "r" }], headComp: -0.6, elbowSign: { r: -1, l: 1 },
+  defaults: { lfx: -26, rfx: 20, lfy: 0, rfy: 0, lfa: -80, rfa: -40 },
+  keys: [
+    [0.00, { hx: 0, hy: -57.5, t: 180, pt: 0, rhx: 40, rhy: -98, b0f: 140, lhx: -36, lhy: -60 }],
+    [0.10, {}],
+    [0.30, { hx: 10, hy: -56, t: 214, rhx: 14, rhy: -128, b0f: 150, lhx: -38, lhy: -36 }],
+    [0.46, { hx: 16, hy: -52, t: 238, pt: 8, rhx: -14, rhy: -178, b0f: 155, lhx: -32, lhy: -10 }],   // under the bell, arm locked
+    [0.56, {}],
+    [0.74, { hx: 0, hy: -57.5, t: 180, pt: 0, rhx: 34, rhy: -188, lhx: -36, lhy: -60 }],              // stand up with lockout
+    [0.82, {}],
+    [0.96, { rhx: 40, rhy: -98, b0f: 140 }],
+  ],
+  effort: [0.4], sweat: [6.9, 8.9], strainAt: [[0.25, 0.75]] });
+
+// arm bar: supine, bell locked out; the near knee crosses over to roll toward the far side
+add({ id: "arm-bar", name: "Arm Bar", sub: "Rotational", rep: 5, ...supine,
+  legMode: { l: "fk", r: "fk" }, armMode: { l: "fk", r: "fkw" }, bells: [{ hand: "r" }],
+  defaults: { hx: 26, hy: -52, lua: 172, le: 0, rua: 180, re: 0, b0f: 155, lfa: 90, rfa: 90 },
+  keys: [
+    [0.00, { t: 270, lth: 0, lk: 0, rth: 0, rk: 0, zgr: 2 }],
+    [0.10, {}],
+    [0.26, { rth: 70, rk: 100, zgr: 7 }],                  // near knee up
+    [0.42, { t: 280, hy: -56, rth: 90, rk: 80, zgr: 0.4 }],// knee drops across, roll
+    [0.66, {}],
+    [0.80, { t: 270, hy: -52, rth: 70, rk: 100, zgr: 7 }],
+    [0.94, { rth: 0, rk: 0, zgr: 2 }],
+  ],
+  effort: [0.42], sweat: [7.4, 9.0], strainAt: [[0.4, 0.7]], shadow: { x: 0, rx: 110 } });
+
+module.exports = L;
+},
+"./ex_extra.js": function (module, exports, require) {
+// New Oog clips authored after the original export. Same format as the other ex_*.js files.
+const { sw, mirror, halves, stepLegs } = require("./lib.js");
+const L = [];
+const adder = cat => d => (L.push(Object.assign({ cat }, d)), d);
+const addPush = adder("push"), addPull = adder("pull"), addLegs = adder("legs-squat"), addHinge = adder("hinge");
+
+// ======================= PUSH =======================
+// double press: front view, a bell racked on each side (strict-press timing)
+const FST = { hx: 0, hy: -57.5, t: 180, lfx: -18, rfx: 18, lfy: 0, rfy: 0, lfa: -75, rfa: 75 };
+const RACK2 = { rhx: 38, rhy: -40, b0f: 140, lhx: -38, lhy: -40, b1f: -140 };
+const LOCK2 = { rhx: 36, rhy: -131, b0f: 155, lhx: -36, lhy: -131, b1f: -155 };
+addPush({ id: "double-press", name: "Double Press", sub: "Vertical", view: "front", rep: 2.5,
+  armMode: { l: "ikb", r: "ikb" }, bells: [{ hand: "r" }, { hand: "l" }],
+  keys: [
+    [0.00, { ...FST, ...RACK2 }],
+    [0.12, {}],
+    [0.48, { ...LOCK2 }],
+    [0.60, {}],
+    [0.94, { ...RACK2 }],
+  ],
+  effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.15, 0.45]] });
+
+// double floor press: supine, head on the left (floor-press rig), both arms press together
+addPush({ id: "double-floor-press", name: "Double Floor Press", sub: "Horizontal", rep: 2.5,
+  headComp: -1.05, headClamp: 180, armMode: { l: "ik", r: "ik" }, elbowSign: { l: 1, r: 1 },
+  hipOff: { l: { x: -30, y: 0 }, r: { x: -26, y: 0 } }, shOff: { l: { x: -26, y: -46 }, r: { x: -20, y: -46 } },
+  bells: [{ hand: "l", z: 2.9 }, { hand: "r" }],
+  defaults: { hx: 30, hy: -52, t: 270, lfx: 70, rfx: 76, lfy: 0, rfy: 0, b0a: -25, b1a: -25 },
+  keys: [
+    [0.00, { lhx: -22, lhy: -76, rhx: -16, rhy: -82 }],
+    [0.12, {}],
+    [0.50, { lhx: -10, lhy: -38, rhx: -4, rhy: -44 }],
+    [0.58, {}],
+    [0.92, { lhx: -22, lhy: -76, rhx: -16, rhy: -82 }],
+  ],
+  shadow: { x: 10, rx: 110 }, effort: [0.7], sweat: sw(2.5, 0.74), strainAt: [[0.55, 0.85]] });
+
+// archer push-up: seen head-on so the side shift and the straight arm read. The torso is
+// foreshortened (pt) into broad shoulders behind the head; the legs run away from the camera (hidden).
+const archR = [
+  [0.00, { hx: 0, hy: -37, t: 180 }],
+  [0.10, {}],
+  [0.46, { hx: 18, hy: -26, t: 172 }],
+  [0.58, {}],
+  [0.92, { hx: 0, hy: -37, t: 180 }],
+];
+addPush({ id: "archer-push-up", name: "Archer Push-up", sub: "Horizontal", view: "front", rep: 5,
+  armMode: { l: "ik", r: "ik" }, legMode: { l: "fkw", r: "fkw" }, elbowSign: { l: -1, r: 1 },
+  headPos: { x: 0, y: -60 }, shOff: { l: { x: -42, y: -40 }, r: { x: 42, y: -40 } },
+  defaults: { pt: 63, lhx: -64, rhx: 64, lhy: 0, rhy: 0, lth: 180, rth: 180, lk: 0, rk: 0, ltf: 0.4, rtf: 0.4, lsf: 0.01, rsf: 0.01, lff: 0.01, rff: 0.01 },
+  keys: halves(archR, mirror(archR)),
+  shadow: { x: 0, rx: 84 }, effort: [0.23, 0.73], sweat: [7.4, 9.0], strainAt: [[0.2, 0.4], [0.7, 0.9]] });
+
+// bench dip: hands on the bench edge behind, feet forward, elbows bend straight back
+addPush({ id: "bench-dip", name: "Bench Dip", sub: "Vertical", rep: 2.5,
+  armMode: { l: "ik", r: "ik" },
+  props: [{ type: "bench", x: -118, y: -46, w: 74 }],
+  defaults: { lhx: -52, rhx: -48, lhy: -46, rhy: -46, lfx: 6, rfx: 12, lfy: 0, rfy: 0 },
+  keys: [
+    [0.00, { hx: -30, hy: -37, t: 180 }],
+    [0.10, {}],
+    [0.48, { hx: -32, hy: -14, t: 176 }],
+    [0.56, {}],
+    [0.92, { hx: -30, hy: -37, t: 180 }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.48, 0.8]] });
+
+// ======================= PULL =======================
+const DROW = { hx: -26, hy: -54, t: 122, lfx: -12, rfx: 2, lfy: 0, rfy: 0 };
+addPull({ id: "double-row", name: "Double Row", sub: "Kettlebell", rep: 2.5,
+  armMode: { l: "ik", r: "ik" }, elbowSign: { l: 1, r: 1 },
+  bells: [{ hand: "l", z: 2.9 }, { hand: "r" }], defaults: { b0a: 0, b1a: 0 },
+  keys: [
+    [0.00, { ...DROW, lhx: 23, lhy: -36, rhx: 30, rhy: -32 }],
+    [0.10, {}],
+    [0.42, { lhx: -2, lhy: -70, rhx: 4, rhy: -66, t: 124 }],
+    [0.54, {}],
+    [0.90, { lhx: 23, lhy: -36, rhx: 30, rhy: -32, t: 122 }],
+  ],
+  effort: [0.3], sweat: sw(2.5, 0.35), strainAt: [[0.2, 0.55]] });
+
+// ======================= LEGS =======================
+// double front squat: side view so the upright torso and depth read (the front view is front-rack-squat)
+const ST = { hx: 0, hy: -57.5, t: 180, lfx: -8, rfx: 2, lfy: 0, rfy: 0 };
+addLegs({ id: "double-front-squat", name: "Double Front Squat", sub: "Squat", rep: 2.5,
+  armMode: { l: "ikb", r: "ikb" }, bells: [{ hand: "l", z: 2.9 }, { hand: "r" }],
+  defaults: { lhx: 36, lhy: -44, rhx: 42, rhy: -44, b0f: 150, b1f: 150 },
+  keys: [
+    [0.00, { ...ST }],
+    [0.06, {}],
+    [0.48, { hx: -13, hy: -27, t: 162 }],
+    [0.56, {}],
+    [0.92, { ...ST }],
+  ],
+  effort: [0.72], sweat: sw(2.5, 0.75), strainAt: [[0.5, 0.8]] });
+
+// jump rope: front view. The rope prop is listed twice: the half behind Oog in props, the half
+// in front (and the handles) in propsFront. Elbows stay by the ribs, hands out at hip height;
+// the hands rise a touch while the rope is overhead and dip as it comes down (wrist turn).
+const ropeBase = (o, top) => ({
+  view: "front", armMode: { l: "ikb", r: "ikb" },
+  props: [Object.assign({ type: "rope", side: -1 }, o)], propsFront: [Object.assign({ type: "rope", side: 1 }, o)],
+  shadow: { x: 0, rx: 50 }, fitExtra: [[-92, top], [92, 4]],
+});
+const ropeHands = (x, y) => ({ lhx: -x, lhy: y, rhx: x, rhy: y });
+
+addLegs({ id: "rope-skip", name: "Rope Skip", sub: "Conditioning", rep: 0.5, ...ropeBase({ turns: 1, phase: 0, r: 168 }, -244),
+  keys: [
+    [0.00, { hx: 0, hy: -58.5, t: 180, lfx: -13, rfx: 13, lfy: -2, rfy: -2, lfa: -66, rfa: 66, ...ropeHands(58, -14) }], // rope overhead, heels light
+    [0.25, { hy: -61, lfy: -3.5, rfy: -3.5, lfa: -58, rfa: 58 }],                          // pop off the balls of the feet
+    [0.50, { hy: -68.5, lfy: -11.5, rfy: -11.5, lfa: -46, rfa: 46, ...ropeHands(58, -10) }], // airborne: rope passes under
+    [0.75, { hy: -61, lfy: -3.5, rfy: -3.5, lfa: -58, rfa: 58 }],                          // land softly
+  ],
+  effort: [0.25], sweat: [6.65, 8.9] });
+
+addLegs({ id: "rope-double-under", name: "Double Under", sub: "Conditioning", rep: 0.625, ...ropeBase({ turns: 2, phase: 0, r: 168, trail: 2 }, -258),
+  keys: [
+    [0.00, { hx: 0, hy: -58, t: 180, lfx: -13, rfx: 13, lfy: -2, rfy: -2, lfa: -66, rfa: 66, ...ropeHands(60, -9) }], // loaded landing
+    [0.13, { hy: -61, lfy: -3.5, rfy: -3.5, lfa: -58, rfa: 58 }],                          // drive up
+    [0.25, { hy: -71, lfy: -14, rfy: -14, lfa: -44, rfa: 44 }],                            // first pass under
+    [0.50, { hy: -77, lfy: -21, rfy: -21, lfa: -40, rfa: 40 }],                            // top of the jump, rope overhead
+    [0.75, { hy: -71, lfy: -14, rfy: -14, lfa: -44, rfa: 44 }],                            // second pass under
+    [0.87, { hy: -61, lfy: -3.5, rfy: -3.5, lfa: -58, rfa: 58 }],
+  ],
+  effort: [0.13], sweat: [6.6, 8.8], strainAt: [[0.1, 0.9]] });
+
+addLegs({ id: "rope-high-knee", name: "Rope High Knee", sub: "Conditioning", rep: 10 / 12, ...ropeBase({ turns: 2, phase: 0.5, r: 168 }, -246),
+  legMode: { l: "fkw", r: "fkw" }, flex: { l: 1, r: 1 },
+  keys: [[0, { hx: 0, hy: -57.5, t: 180, ...ropeHands(58, -12) }]],
+  post(c, p) {
+    stepLegs(c, p, { high: true });
+    const q = (2 * p) % 1, dq = Math.min(q, 1 - q);       // 0 at each foot switch
+    c.hy -= 7 * Math.exp(-Math.pow(dq / 0.13, 2));         // quick hop at the switch: the rope passes under here
+    c.lhy = c.rhy = -12 + 2 * Math.cos(4 * Math.PI * p);   // wrist turn, one per step
+  },
+  effort: [0.25, 0.75], sweat: [6.6, 8.9] });
+
+// ======================= HINGE =======================
+const SW = {
+  top: { hx: 0, hy: -57.5, t: 184 },
+  fall: { hx: 0, hy: -57.5, t: 178 },
+  hike: { hx: -2, hy: -56, t: 166 },
+  bot: { hx: -14, hy: -47, t: 122 },
+  snap: { hx: -4, hy: -55, t: 164 },
+  up: { hx: 0, hy: -57.5, t: 180 },
+};
+const swingKeys = (arms) => [
+  [0.00, { ...SW.top, ...arms(86) }],
+  [0.22, { ...SW.fall, ...arms(40) }],
+  [0.34, { ...SW.hike, ...arms(5) }],
+  [0.50, { ...SW.bot, ...arms(-34) }],
+  [0.64, { ...SW.snap, ...arms(10) }],
+  [0.76, { ...SW.up, ...arms(55) }],
+  [0.90, { ...SW.top, ...arms(86) }],
+];
+addHinge({ id: "double-swing", name: "Double Swing", sub: "Ballistic · Intermediate", rep: 2,
+  defaults: { lfx: -10, rfx: 4, le: 4, re: 4 }, armMode: { l: "fkw", r: "fkw" },
+  keys: swingKeys(a => ({ lua: a, rua: a })),
+  bells: [{ hand: "l", z: 2.9 }, { hand: "r" }], effort: [0.64], motion: [{ bell: 1, win: [0.62, 0.86] }], sweat: sw(2, 0.66), strainAt: [[0.56, 0.7]] });
+
+module.exports = L;
+}};var __M={};function __r(n){if(__M[n])return __M[n].exports;var m={exports:{}};__M[n]=m;__S[n](m,m.exports,__r);return m.exports;}window.OogExercises=[].concat(__r("./ex_legs.js"),__r("./ex_hinge.js"),__r("./ex_push.js"),__r("./ex_pull.js"),__r("./ex_core.js"),__r("./ex_extra.js"));})();</script>
+<script>
+(function () {
+  var LOOP = OogEngine.LOOP;
+  var META = [{"cat":"legs-squat","id":"squat","movementId":"squat","aliases":[]},{"cat":"legs-squat","id":"goblet-squat","movementId":"goblet-squat","aliases":[]},{"cat":"legs-squat","id":"tempo-goblet-squat","movementId":"tempo-goblet-squat","aliases":[]},{"cat":"legs-squat","id":"pause-squat","movementId":"pause-squat","aliases":[]},{"cat":"legs-squat","id":"front-rack-squat","movementId":"front-rack-squat","aliases":[]},{"cat":"legs-squat","id":"cyclist-squat","movementId":"cyclist-squat","aliases":[]},{"cat":"legs-squat","id":"single-leg-reverse-lunge","movementId":"reverse-lunge","aliases":[]},{"cat":"legs-squat","id":"forward-lunge","movementId":"forward-lunge","aliases":[]},{"cat":"legs-squat","id":"walking-lunge","movementId":"walking-lunge","aliases":[]},{"cat":"legs-squat","id":"bulgarian-split-squat","movementId":"bulgarian-split-squat","aliases":[]},{"cat":"legs-squat","id":"step-up","movementId":"step-up","aliases":[]},{"cat":"legs-squat","id":"skater-squat","movementId":"skater-squat","aliases":[]},{"cat":"legs-squat","id":"cossack-squat","movementId":"cossack-squat","aliases":[]},{"cat":"legs-squat","id":"lateral-lunge","movementId":"lateral-lunge","aliases":[]},{"cat":"hinge","id":"romanian-deadlift","movementId":"romanian-deadlift","aliases":[]},{"cat":"hinge","id":"kettlebell-deadlift","movementId":"kettlebell-deadlift","aliases":[]},{"cat":"hinge","id":"single-leg-deadlift","movementId":"single-leg-deadlift","aliases":[]},{"cat":"hinge","id":"good-morning","movementId":"good-morning","aliases":[]},{"cat":"hinge","id":"hip-thrust","movementId":"hip-thrust","aliases":[]},{"cat":"hinge","id":"two-hand-swing","movementId":"two-hand-swing","aliases":[]},{"cat":"hinge","id":"one-hand-swing","movementId":"one-hand-swing","aliases":[]},{"cat":"hinge","id":"hand-to-hand-swing","movementId":"hand-to-hand-swing","aliases":[]},{"cat":"hinge","id":"alternating-swing","movementId":"alternating-swing","aliases":[]},{"cat":"hinge","id":"clean","movementId":"clean","aliases":[]},{"cat":"hinge","id":"ballistic-clean-variations","movementId":null,"aliases":[]},{"cat":"hinge","id":"dead-clean","movementId":"dead-clean","aliases":[]},{"cat":"hinge","id":"high-pull","movementId":"hinge-high-pull","aliases":["pull-high-pull"]},{"cat":"hinge","id":"snatch","movementId":"snatch","aliases":[]},{"cat":"hinge","id":"double-snatch","movementId":"double-snatch","aliases":[]},{"cat":"hinge","id":"alternating-snatch","movementId":"alternating-snatch","aliases":[]},{"cat":"hinge","id":"clean-and-jerk","movementId":"clean-and-jerk","aliases":[]},{"cat":"hinge","id":"long-cycle","movementId":"long-cycle","aliases":[]},{"cat":"push","id":"strict-press","movementId":"strict-press","aliases":[]},{"cat":"push","id":"push-press","movementId":"push-press","aliases":[]},{"cat":"push","id":"push-jerk","movementId":"push-jerk","aliases":[]},{"cat":"push","id":"thruster","movementId":"thruster","aliases":[]},{"cat":"push","id":"half-kneeling-press","movementId":"half-kneeling-press","aliases":[]},{"cat":"push","id":"z-press","movementId":"z-press","aliases":[]},{"cat":"push","id":"bottoms-up-press","movementId":"bottoms-up-press","aliases":[]},{"cat":"push","id":"clean-and-press","movementId":"clean-and-press","aliases":[]},{"cat":"push","id":"push-up","movementId":"push-up","aliases":[]},{"cat":"push","id":"deficit-push-up","movementId":"deficit-push-up","aliases":[]},{"cat":"push","id":"close-grip-push-up","movementId":"close-grip-push-up","aliases":[]},{"cat":"push","id":"ring-push-up","movementId":null,"aliases":[]},{"cat":"push","id":"dips","movementId":"dips","aliases":[]},{"cat":"push","id":"floor-press","movementId":"floor-press","aliases":[]},{"cat":"pull","id":"pull-up","movementId":"pull-up","aliases":[]},{"cat":"pull","id":"chin-up","movementId":"chin-up","aliases":[]},{"cat":"pull","id":"neutral-grip-pull-up","movementId":"neutral-grip-pull-up","aliases":[]},{"cat":"pull","id":"towel-pull-up","movementId":"towel-pull-up","aliases":[]},{"cat":"pull","id":"inverted-row","movementId":"inverted-row","aliases":[]},{"cat":"pull","id":"gorilla-row","movementId":"gorilla-row","aliases":[]},{"cat":"pull","id":"single-arm-row","movementId":"single-arm-row","aliases":[]},{"cat":"pull","id":"three-point-row","movementId":"three-point-row","aliases":[]},{"cat":"pull","id":"renegade-row","movementId":"renegade-row","aliases":[]},{"cat":"pull","id":"ballistic-row","movementId":"ballistic-row","aliases":[]},{"cat":"pull","id":"dead-clean-pull","movementId":"dead-clean-pull","aliases":[]},{"cat":"core","id":"suitcase-carry","movementId":"suitcase-carry","aliases":[]},{"cat":"core","id":"front-rack-carry","movementId":"front-rack-carry","aliases":[]},{"cat":"core","id":"waiters-carry","movementId":"waiters-carry","aliases":[]},{"cat":"core","id":"overhead-carry","movementId":"overhead-carry","aliases":[]},{"cat":"core","id":"offset-march","movementId":"offset-march","aliases":[]},{"cat":"core","id":"front-rack-march","movementId":"front-rack-march","aliases":[]},{"cat":"core","id":"overhead-march","movementId":"overhead-march","aliases":[]},{"cat":"core","id":"plank","movementId":"plank","aliases":[]},{"cat":"core","id":"side-plank","movementId":"side-plank","aliases":[]},{"cat":"core","id":"hollow-hold","movementId":"hollow-hold","aliases":[]},{"cat":"core","id":"hanging-knee-raise","movementId":"hanging-knee-raise","aliases":[]},{"cat":"core","id":"hanging-leg-raise","movementId":"hanging-leg-raise","aliases":[]},{"cat":"core","id":"dead-bug","movementId":"dead-bug","aliases":[]},{"cat":"core","id":"bird-dog","movementId":"bird-dog","aliases":[]},{"cat":"core","id":"halo","movementId":"halo","aliases":[]},{"cat":"core","id":"around-the-world","movementId":"around-the-world","aliases":[]},{"cat":"core","id":"half-kneeling-chop","movementId":"half-kneeling-chop","aliases":[]},{"cat":"core","id":"uppercut","movementId":"uppercut","aliases":[]},{"cat":"core","id":"figure-8-to-hold","movementId":"figure-8-to-hold","aliases":[]},{"cat":"core","id":"rotational-clean","movementId":"rotational-clean","aliases":[]},{"cat":"core","id":"rotational-deadlift","movementId":"rotational-deadlift","aliases":[]},{"cat":"core","id":"windmill","movementId":"windmill","aliases":[]},{"cat":"core","id":"bent-press","movementId":"bent-press","aliases":[]},{"cat":"core","id":"arm-bar","movementId":"arm-bar","aliases":[]},{"cat":"push","id":"double-press","movementId":"double-press","aliases":[]},{"cat":"push","id":"double-floor-press","movementId":"double-floor-press","aliases":[]},{"cat":"push","id":"archer-push-up","movementId":"archer-push-up","aliases":[]},{"cat":"push","id":"bench-dip","movementId":"bench-dip","aliases":[]},{"cat":"pull","id":"double-row","movementId":"double-row","aliases":[]},{"cat":"legs-squat","id":"double-front-squat","movementId":"double-front-squat","aliases":[]},{"cat":"legs-squat","id":"rope-skip","movementId":"rope-skip","aliases":[]},{"cat":"legs-squat","id":"rope-double-under","movementId":"rope-double-under","aliases":[]},{"cat":"legs-squat","id":"rope-high-knee","movementId":"rope-high-knee","aliases":[]},{"cat":"hinge","id":"double-swing","movementId":"double-swing","aliases":[]}];
+  var CAT_LABELS = {"legs-squat":"Legs: squat pattern","hinge":"Legs: hinge and ballistics","push":"Push","pull":"Pull","core":"Core"};
+  var defs = window.OogExercises;
+  var qs = new URLSearchParams(location.search);
+  var reduce = false;
+  try { reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) {}
+
+  var startT = parseFloat(qs.get("t"));
+  var state = {
+    t: isFinite(startT) ? Math.max(0, Math.min(LOOP, startT)) : 0,
+    playing: !(qs.get("paused") === "1" || qs.get("paused") === "true") && !reduce,
+  };
+
+  var tiles = [];          // { key, def, clip, btn, stage, visible, lastT }
+  var byKey = {};
+  var metaByKey = {};
+  META.forEach(function (m) { metaByKey[m.cat + ":" + m.id] = m; });
+
+  function h(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function badge() { return h("span", "noid", "no app id"); }
+
+  // ---------- grid ----------
+  var main = document.getElementById("grid");
+  var nav = document.getElementById("catnav");
+  var catOrder = [];
+  defs.forEach(function (d) { if (catOrder.indexOf(d.cat) < 0) catOrder.push(d.cat); });
+
+  catOrder.forEach(function (cat) {
+    var list = defs.filter(function (d) { return d.cat === cat; });
+    var sec = h("section", "cat");
+    sec.id = "cat-" + cat;
+    var h2 = h("h2", null, CAT_LABELS[cat] || cat);
+    h2.appendChild(h("small", null, list.length + " clips"));
+    sec.appendChild(h2);
+    var grid = h("div", "tiles");
+    list.forEach(function (def) {
+      var key = def.cat + ":" + def.id;
+      var m = metaByKey[key] || {};
+      var btn = h("button", "tile");
+      btn.type = "button";
+      btn.setAttribute("aria-label", "Open " + def.name);
+      var stage = h("div", "stage");
+      btn.appendChild(stage);
+      btn.appendChild(h("div", "name", def.name));
+      btn.appendChild(h("div", "slug", def.id));
+      if (!m.movementId) btn.appendChild(badge());
+      var t = { key: key, def: def, clip: OogEngine.makeClip(def), btn: btn, stage: stage, visible: true, lastT: null };
+      btn.addEventListener("click", function () { openSingle(key); });
+      tiles.push(t); byKey[key] = t;
+      grid.appendChild(btn);
+    });
+    sec.appendChild(grid);
+    main.appendChild(sec);
+    var a = h("a", "pill", CAT_LABELS[cat] || cat);
+    a.href = "#cat-" + cat;
+    nav.appendChild(a);
+  });
+  document.getElementById("count").textContent = defs.length + " clips";
+
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        var t = byKey[en.target.getAttribute("data-key")];
+        if (t) { t.visible = en.isIntersecting; if (en.isIntersecting) t.lastT = null; }
+      });
+    }, { rootMargin: "120px" });
+    tiles.forEach(function (t) { t.btn.setAttribute("data-key", t.key); t.visible = false; io.observe(t.btn); });
+  }
+
+  // ---------- single view ----------
+  var single = document.getElementById("single");
+  var sName = document.getElementById("sName");
+  var sMeta = document.getElementById("sMeta");
+  var sStage = document.getElementById("sStage");
+  var sPlay = document.getElementById("sPlay");
+  var sScrub = document.getElementById("sScrub");
+  var sTime = document.getElementById("sTime");
+  var current = null;      // tile shown in the single view
+  var singleLastT = null;
+  var scrubbing = false;
+
+  function updateUrl(key) {
+    try {
+      var p = new URLSearchParams(location.search);
+      if (key) { var parts = key.split(":"); p.set("cat", parts[0]); p.set("id", parts.slice(1).join(":")); }
+      else { p.delete("cat"); p.delete("id"); }
+      var s = p.toString();
+      history.replaceState(null, "", location.pathname + (s ? "?" + s : ""));
+    } catch (e) { /* file:// and sandboxed frames may refuse */ }
+  }
+
+  function openSingle(key) {
+    var t = byKey[key];
+    if (!t) return false;
+    var m = metaByKey[key] || {};
+    current = t;
+    sName.textContent = t.def.name;
+    sMeta.textContent = "";
+    var code = function (txt) { var c = h("code", null, txt); return c; };
+    sMeta.appendChild(document.createTextNode("def id "));
+    sMeta.appendChild(code(t.def.id));
+    sMeta.appendChild(document.createTextNode(" in " + (CAT_LABELS[t.def.cat] || t.def.cat) + " / movementId "));
+    if (m.movementId) sMeta.appendChild(code(m.movementId));
+    else { sMeta.appendChild(code("null")); sMeta.appendChild(badge()); }
+    if (m.aliases && m.aliases.length) {
+      sMeta.appendChild(document.createTextNode(" / also serves "));
+      m.aliases.forEach(function (a) { sMeta.appendChild(code(a)); });
+    }
+    if (t.def.sub) sMeta.appendChild(document.createTextNode(" / " + t.def.sub));
+    document.title = "oog clip: " + t.def.id;
+    single.hidden = false;
+    singleLastT = null;
+    updateUrl(key);
+    syncControls();
+    return true;
+  }
+  function closeSingle() {
+    current = null;
+    single.hidden = true;
+    document.title = "Oog clips";
+    updateUrl(null);
+    tiles.forEach(function (t) { t.lastT = null; });
+  }
+  function syncControls() {
+    sPlay.textContent = state.playing ? "Pause" : "Play";
+    document.getElementById("allPlay").textContent = state.playing ? "Pause all" : "Play all";
+  }
+  function setPlaying(v) { state.playing = v; syncControls(); }
+
+  document.getElementById("back").addEventListener("click", closeSingle);
+  sPlay.addEventListener("click", function () { setPlaying(!state.playing); });
+  document.getElementById("allPlay").addEventListener("click", function () { setPlaying(!state.playing); });
+  sScrub.addEventListener("input", function () {
+    scrubbing = true;
+    state.t = parseFloat(sScrub.value) || 0;
+    setPlaying(false);
+  });
+  sScrub.addEventListener("change", function () { scrubbing = false; });
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && current) closeSingle();
+    else if (e.key === " " && current && document.activeElement && document.activeElement.tagName !== "BUTTON") { e.preventDefault(); setPlaying(!state.playing); }
+  });
+
+  // ---------- render loop ----------
+  var last = null;
+  function frame(now) {
+    if (last === null) last = now;
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (state.playing) state.t = (state.t + dt) % LOOP;
+    if (current) {
+      if (singleLastT !== state.t) {
+        sStage.innerHTML = current.clip.svgAt(state.t);
+        singleLastT = state.t;
+        if (!scrubbing) sScrub.value = state.t.toFixed(2);
+        sTime.textContent = state.t.toFixed(2) + " s";
+      }
+    } else {
+      for (var i = 0; i < tiles.length; i++) {
+        var t = tiles[i];
+        if (t.visible && t.lastT !== state.t) { t.stage.innerHTML = t.clip.svgAt(state.t); t.lastT = state.t; }
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  syncControls();
+  var wantId = qs.get("id"), wantCat = qs.get("cat");
+  if (wantId) {
+    var key = null;
+    if (wantCat && byKey[wantCat + ":" + wantId]) key = wantCat + ":" + wantId;
+    else if (!wantCat) { for (var i = 0; i < tiles.length; i++) if (tiles[i].def.id === wantId) { key = tiles[i].key; break; } }
+    if (!key || !openSingle(key)) {
+      var note = h("p", null, "No clip with id " + wantId + (wantCat ? " in cat " + wantCat : "") + ".");
+      note.style.color = "#E53935";
+      main.insertBefore(note, main.firstChild);
+    }
+  }
+  window.OogPreview = { state: state, tiles: tiles, openSingle: openSingle, closeSingle: closeSingle };
+  requestAnimationFrame(frame);
+})();
+</script>
+</body></html>

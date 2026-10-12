@@ -1,0 +1,161 @@
+# Builds the iOS app on a GitHub-hosted Mac, runs the unit tests and renders
+# Oog snapshots (PNG artifacts). Every push to main (and every manual run) also
+# builds an unsigned .ipa that Sideloadly can sign with a free Apple ID and
+# install on an iPhone from Windows. The two jobs run side by side.
+#
+# Optional repository secrets:
+#   EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY,
+#   EXPO_PUBLIC_RORK_AUTH_URL, EXPO_PUBLIC_RORK_APP_KEY, EXPO_PUBLIC_PROJECT_ID
+#     Written into Config.swift (gitignored). Without them the app still runs,
+#     but sign-in and cloud sync are off.
+#   APPETIZE_TOKEN (secret) and APPETIZE_PUBLIC_KEY (repository variable)
+#     When the token is set, each build is also uploaded to Appetize.io, a
+#     browser-based iPhone simulator. The variable keeps one stable link.
+
+name: iOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT: ios-oogo/Oogo.xcodeproj
+  SCHEME: Oogo
+
+jobs:
+  test:
+    name: Build, test, snapshots
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode 26
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Write Config.swift
+        env:
+          EXPO_PUBLIC_PROJECT_ID: ${{ secrets.EXPO_PUBLIC_PROJECT_ID }}
+          EXPO_PUBLIC_RORK_APP_KEY: ${{ secrets.EXPO_PUBLIC_RORK_APP_KEY }}
+          EXPO_PUBLIC_RORK_AUTH_URL: ${{ secrets.EXPO_PUBLIC_RORK_AUTH_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+        run: python3 .github/scripts/write_config.py ios-oogo/Oogo/Config.swift
+
+      - name: Pick an iPhone simulator
+        run: |
+          SIM_ID="$(python3 .github/scripts/pick_simulator.py)"
+          echo "Using simulator $SIM_ID"
+          echo "SIM_ID=$SIM_ID" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project "$PROJECT" -scheme "$SCHEME" \
+            -destination "id=$SIM_ID" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee "$RUNNER_TEMP/build.log" | xcbeautify --renderer github-actions
+
+      # Runs before the tests so the browser link updates even when a test fails.
+      - name: Upload to Appetize (browser simulator)
+        if: github.event_name != 'pull_request'
+        env:
+          APPETIZE_TOKEN: ${{ secrets.APPETIZE_TOKEN }}
+          APPETIZE_PUBLIC_KEY: ${{ vars.APPETIZE_PUBLIC_KEY }}
+        run: |
+          if [ -z "$APPETIZE_TOKEN" ]; then echo "No APPETIZE_TOKEN secret; skipping."; exit 0; fi
+          APP="$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name 'Oogo.app' -path '*iphonesimulator*' | head -1)"
+          (cd "$(dirname "$APP")" && zip -qry "$RUNNER_TEMP/Oogo-sim.zip" Oogo.app)
+          URL="https://api.appetize.io/v1/apps"
+          if [ -n "$APPETIZE_PUBLIC_KEY" ]; then URL="$URL/$APPETIZE_PUBLIC_KEY"; fi
+          curl --fail -sS -X POST "$URL" -H "X-API-KEY: $APPETIZE_TOKEN" \
+            -F "file=@$RUNNER_TEMP/Oogo-sim.zip" -F "platform=ios" -F "note=${GITHUB_SHA::7}" \
+            -o "$RUNNER_TEMP/appetize.json"
+          KEY="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publicKey"])' "$RUNNER_TEMP/appetize.json")"
+          echo "Appetize public key: $KEY"
+          echo "### Try it in the browser: https://appetize.io/app/$KEY?device=iphone16pro&osVersion=18.2&scale=auto" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$APPETIZE_PUBLIC_KEY" ]; then
+            echo "Set repository variable APPETIZE_PUBLIC_KEY=$KEY so later builds update this same link." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Test
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/snapshots"
+          export TEST_RUNNER_OOG_SNAPSHOT_DIR="$RUNNER_TEMP/snapshots"
+          xcodebuild test-without-building \
+            -project "$PROJECT" -scheme "$SCHEME" \
+            -destination "id=$SIM_ID" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
+            2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | xcbeautify --renderer github-actions
+
+      - name: Upload snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oog-snapshots
+          path: ${{ runner.temp }}/snapshots
+          if-no-files-found: ignore
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/xcodebuild.log
+            ${{ runner.temp }}/Tests.xcresult
+
+  ipa:
+    name: Unsigned .ipa for Sideloadly
+    if: github.event_name != 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode 26
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+
+      - name: Write Config.swift
+        env:
+          EXPO_PUBLIC_PROJECT_ID: ${{ secrets.EXPO_PUBLIC_PROJECT_ID }}
+          EXPO_PUBLIC_RORK_APP_KEY: ${{ secrets.EXPO_PUBLIC_RORK_APP_KEY }}
+          EXPO_PUBLIC_RORK_AUTH_URL: ${{ secrets.EXPO_PUBLIC_RORK_AUTH_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+        run: python3 .github/scripts/write_config.py ios-oogo/Oogo/Config.swift
+
+      - name: Archive without signing
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/Oogo.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            2>&1 | xcbeautify --renderer github-actions
+
+      - name: Package .ipa
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/Oogo.xcarchive/Products/Applications/Oogo.app" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "Oogo-${GITHUB_SHA::7}-unsigned.ipa" Payload)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oogo-ipa
+          path: ${{ runner.temp }}/ipa/*.ipa
